@@ -1,19 +1,20 @@
 """Gemini API helper used by the ResQLink backend."""
 
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
 
 
-# Load the backend/.env file without exposing its contents.
+# Load the backend/.env file without printing or exposing its contents.
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(ENV_PATH)
 
 
 def generate_reply(message: str) -> str:
-    """Send one text prompt to Gemini and return its text response."""
+    """Send a text prompt to Gemini and wait for its background interaction."""
     if not isinstance(message, str) or not message.strip():
         raise ValueError("message must be a non-empty string.")
 
@@ -27,26 +28,54 @@ def generate_reply(message: str) -> str:
 
     print(f"Preparing Gemini client. Model: {model}", flush=True)
 
-    # ResQLink currently needs a single response, so use the standard
-    # generateContent API rather than the newer Interactions API.
+    # Background execution avoids keeping one HTTP request open while the
+    # model is generating. We poll the interaction until it completes.
     with genai.Client(
         api_key=api_key,
         http_options={
-            "timeout": 60000,
+            "timeout": 30000,
             "retry_options": {"attempts": 0},
         },
     ) as client:
-        print("Sending request to Gemini. Please wait...", flush=True)
+        print("Submitting background request to Gemini...", flush=True)
 
-        response = client.models.generate_content(
+        interaction = client.interactions.create(
             model=model,
-            contents=message.strip(),
+            input=message.strip(),
+            background=True,
         )
 
-    reply = response.text
+        interaction_id = interaction.id
+        print("Gemini accepted the request. Waiting for completion...", flush=True)
+
+        deadline = time.monotonic() + 120
+
+        while True:
+            interaction = client.interactions.get(interaction_id)
+            status = str(interaction.status).lower().split(".")[-1]
+
+            if status == "completed":
+                break
+
+            if status in {"failed", "cancelled", "canceled"}:
+                error = getattr(interaction, "error", None)
+                raise RuntimeError(
+                    f"Gemini interaction {status}. Details: {error or 'No error details returned.'}"
+                )
+
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    "Gemini is still processing after 120 seconds. "
+                    f"Interaction ID: {interaction_id}"
+                )
+
+            print(f"Gemini status: {status}. Checking again in 2 seconds...", flush=True)
+            time.sleep(2)
+
+    reply = interaction.output_text
     if not reply:
         raise RuntimeError(
-            "Gemini returned no text. Check the model response and safety finish reason."
+            "Gemini completed the interaction but returned no text."
         )
 
     print("Gemini response received.", flush=True)
