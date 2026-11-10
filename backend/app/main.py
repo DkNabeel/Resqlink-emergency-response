@@ -3,10 +3,16 @@ import logging
 import os
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal, Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+
+# Load backend/.env here as well as in individual services. FastAPI does not
+# automatically load a .env file unless the server is started with --env-file.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from app.database.alert_repository import (
     get_active_alerts,
@@ -95,8 +101,19 @@ def _location_age_minutes(recorded_at):
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return max(0, int((datetime.now(timezone.utc) - value).total_seconds() / 60))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, AttributeError):
         return None
+
+
+def _format_saved_location(record, *, current=False, message=None):
+    return {
+        "location_available": True,
+        "location_is_current": current,
+        "is_approximate": record["source"] == "ip",
+        **record,
+        "age_minutes": _location_age_minutes(record.get("recorded_at")),
+        "message": message,
+    }
 
 
 @app.get("/")
@@ -119,8 +136,8 @@ def health():
 
 @app.post("/emergency")
 def receive_emergency(request: EmergencyRequest):
-    # Gemini remains a separate service until its live API response is verified.
-    # This endpoint intentionally does not claim that AI guidance was generated.
+    # Gemini remains separate until its live API response is verified.
+    # This endpoint does not claim that AI guidance was generated.
     return {
         "status": "received",
         "message": request.message.strip(),
@@ -222,10 +239,8 @@ async def resolve_location(payload: LocationResolveRequest, request: Request):
             state=payload.state,
             country=payload.country,
         )
-        return {
-            "location_available": True,
-            "location_is_current": payload.source == "gps",
-            "is_approximate": payload.source != "gps",
+        record = {
+            "device_id": payload.device_id,
             "latitude": payload.latitude,
             "longitude": payload.longitude,
             "source": payload.source,
@@ -234,13 +249,40 @@ async def resolve_location(payload: LocationResolveRequest, request: Request):
             "district": payload.district,
             "state": payload.state,
             "country": payload.country,
-            "message": (
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        return _format_saved_location(
+            record,
+            current=payload.source == "gps",
+            message=(
                 "Current GPS location received."
                 if payload.source == "gps"
                 else "Manually selected location saved."
             ),
-        }
+        )
 
+    # A manually selected place remains the user's explicit choice.
+    last_manual = get_last_location(payload.device_id, source="manual")
+    if last_manual:
+        return _format_saved_location(
+            last_manual,
+            message="Using the last manually selected location.",
+        )
+
+    # Prefer a recent GPS fix over a less accurate IP estimate.
+    last_gps = get_last_location(payload.device_id, source="gps")
+    gps_age = (
+        _location_age_minutes(last_gps.get("recorded_at"))
+        if last_gps else None
+    )
+    if last_gps and gps_age is not None and gps_age <= 60:
+        return _format_saved_location(
+            last_gps,
+            message="GPS is currently unavailable; using a recent saved GPS location.",
+        )
+
+    # IP lookup is opt-in and only uses the direct client address. Do not trust
+    # X-Forwarded-For unless a trusted-proxy configuration is deliberately added.
     client_ip = request.client.host if request.client else None
     if client_ip:
         estimate = await estimate_location_from_ip(client_ip)
@@ -251,19 +293,18 @@ async def resolve_location(payload: LocationResolveRequest, request: Request):
                 **estimate,
             }
 
+    if last_gps:
+        return _format_saved_location(
+            last_gps,
+            message="Using an older saved GPS location. It may no longer be current.",
+        )
+
     last_location = get_last_location(payload.device_id)
     if last_location:
-        return {
-            "location_available": True,
-            "location_is_current": False,
-            "is_approximate": last_location["source"] == "ip",
-            **last_location,
-            "age_minutes": _location_age_minutes(last_location["recorded_at"]),
-            "message": (
-                "Using the last saved location. It may no longer represent "
-                "the device's current position."
-            ),
-        }
+        return _format_saved_location(
+            last_location,
+            message="Using the last saved location. It may no longer be current.",
+        )
 
     return {
         "location_available": False,
@@ -283,13 +324,10 @@ def last_known_location(device_id: str):
             "location_available": False,
             "message": "No saved location exists for this device yet.",
         }
-    return {
-        "location_available": True,
-        "location_is_current": False,
-        "is_approximate": record["source"] == "ip",
-        **record,
-        "age_minutes": _location_age_minutes(record["recorded_at"]),
-    }
+    return _format_saved_location(
+        record,
+        message="Saved location; check its age before using it for location-sensitive guidance.",
+    )
 
 
 @app.get("/facilities")

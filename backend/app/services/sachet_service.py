@@ -47,7 +47,7 @@ def _parse_datetime(value):
         try:
             parsed = parsedate_to_datetime(value)
         except (TypeError, ValueError, OverflowError):
-            return value
+            return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).isoformat()
@@ -202,33 +202,42 @@ async def sync_sachet_feed(feed_url=None):
         headers["If-Modified-Since"] = previous["last_modified"]
 
     timeout = httpx.Timeout(25.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(feed_url, headers=headers)
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(feed_url, headers=headers)
 
-    if response.status_code == 304:
-        update_feed_state(feed_url, http_status=304, success=True)
+        if response.status_code == 304:
+            update_feed_state(feed_url, http_status=304, success=True)
+            return {
+                "status": "not_modified",
+                "new_alerts": 0,
+                "feed_url": feed_url,
+                "http_status": 304,
+            }
+
+        response.raise_for_status()
+        alerts = parse_sachet_feed(response.content)
+        upsert_alerts(alerts)
+
+        update_feed_state(
+            feed_url,
+            etag=response.headers.get("ETag"),
+            last_modified=response.headers.get("Last-Modified"),
+            http_status=response.status_code,
+            success=True,
+        )
+
         return {
-            "status": "not_modified",
-            "new_alerts": 0,
+            "status": "updated",
+            "new_alerts": len(alerts),
             "feed_url": feed_url,
-            "http_status": 304,
+            "http_status": response.status_code,
         }
-
-    response.raise_for_status()
-    alerts = parse_sachet_feed(response.content)
-    upsert_alerts(alerts)
-
-    update_feed_state(
-        feed_url,
-        etag=response.headers.get("ETag"),
-        last_modified=response.headers.get("Last-Modified"),
-        http_status=response.status_code,
-        success=True,
-    )
-
-    return {
-        "status": "updated",
-        "new_alerts": len(alerts),
-        "feed_url": feed_url,
-        "http_status": response.status_code,
-    }
+    except Exception as exc:
+        update_feed_state(
+            feed_url,
+            http_status=getattr(getattr(exc, "response", None), "status_code", None),
+            error=f"{type(exc).__name__}: {exc}"[:500],
+            success=False,
+        )
+        raise

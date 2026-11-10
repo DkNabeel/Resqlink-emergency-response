@@ -66,31 +66,35 @@ def match_alert_location(alert, latitude, longitude, city=None, district=None, s
     """
     polygons = alert.get("polygons") or []
     circles = alert.get("circles") or []
+    geometry_present = bool(polygons or circles)
+    nearest_circle_distance = None
 
-    if polygons:
-        if any(point_in_polygon(latitude, longitude, polygon) for polygon in polygons):
+    for polygon in polygons:
+        if point_in_polygon(latitude, longitude, polygon):
             return {"matched": True, "method": "cap_polygon", "distance_km": 0.0}
-        return {"matched": False, "method": "outside_cap_polygon", "distance_km": None}
 
-    if circles:
-        distances = []
-        for circle in circles:
-            distance = haversine_km(
-                latitude, longitude, float(circle["latitude"]), float(circle["longitude"])
-            )
-            distances.append((distance, float(circle["radius_km"])))
-        for distance, radius in distances:
-            if distance <= radius:
-                return {
-                    "matched": True,
-                    "method": "cap_circle",
-                    "distance_km": round(distance, 2),
-                }
-        nearest = min(distances, key=lambda item: item[0])
+    for circle in circles:
+        distance = haversine_km(
+            latitude, longitude, float(circle["latitude"]), float(circle["longitude"])
+        )
+        if nearest_circle_distance is None or distance < nearest_circle_distance:
+            nearest_circle_distance = distance
+        if distance <= float(circle["radius_km"]):
+            return {
+                "matched": True,
+                "method": "cap_circle",
+                "distance_km": round(distance, 2),
+            }
+
+    if geometry_present:
         return {
             "matched": False,
-            "method": "outside_cap_circle",
-            "distance_km": round(nearest[0], 2),
+            "method": "outside_cap_geometry",
+            "distance_km": (
+                round(nearest_circle_distance, 2)
+                if nearest_circle_distance is not None
+                else None
+            ),
         }
 
     area_text = " ".join(
