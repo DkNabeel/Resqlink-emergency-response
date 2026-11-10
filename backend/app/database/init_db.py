@@ -2,6 +2,7 @@ from app.database.connection import get_connection
 
 
 def create_tables():
+    """Create all ResQLink tables without disturbing existing facility data."""
     connection = get_connection()
 
     try:
@@ -16,6 +17,80 @@ def create_tables():
                 phone TEXT
             )
         """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS alerts (
+                alert_id TEXT PRIMARY KEY,
+                source TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                event TEXT,
+                category TEXT,
+                severity TEXT,
+                urgency TEXT,
+                certainty TEXT,
+                status TEXT NOT NULL DEFAULT 'Unknown',
+                message_type TEXT,
+                effective_at TEXT,
+                expires_at TEXT,
+                published_at TEXT,
+                area_description TEXT,
+                polygons_json TEXT NOT NULL DEFAULT '[]',
+                circles_json TEXT NOT NULL DEFAULT '[]',
+                geocodes_json TEXT NOT NULL DEFAULT '[]',
+                references_json TEXT NOT NULL DEFAULT '[]',
+                source_url TEXT,
+                raw_content TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL
+            )
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alerts_expiry
+            ON alerts(expires_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alerts_published
+            ON alerts(published_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alerts_status
+            ON alerts(status)
+        """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS feed_sync_state (
+                feed_url TEXT PRIMARY KEY,
+                etag TEXT,
+                last_modified TEXT,
+                last_checked_at TEXT,
+                last_success_at TEXT,
+                last_http_status INTEGER,
+                last_error TEXT
+            )
+        """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS location_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                source TEXT NOT NULL,
+                accuracy_m REAL,
+                city TEXT,
+                district TEXT,
+                state TEXT,
+                country TEXT,
+                recorded_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_location_device_time
+            ON location_history(device_id, recorded_at DESC)
+        """)
+
         connection.commit()
     finally:
         connection.close()
@@ -23,4 +98,4 @@ def create_tables():
 
 if __name__ == "__main__":
     create_tables()
-    print("Facilities table created or already exists.")
+    print("ResQLink database tables created or already exist.")
