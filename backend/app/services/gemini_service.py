@@ -13,6 +13,24 @@ ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(ENV_PATH)
 
 
+def _format_api_error(error) -> str | None:
+    """Format a Gemini ErrorEvent without exposing credentials."""
+    if error is None:
+        return None
+
+    if isinstance(error, dict):
+        code = error.get("code")
+        message = error.get("message")
+    else:
+        code = getattr(error, "code", None)
+        message = getattr(error, "message", None)
+
+    if code or message:
+        return f"{code or 'API error'}: {message or 'No message returned.'}"
+
+    return str(error)
+
+
 def generate_reply(message: str) -> str:
     """Send a text prompt to Gemini and wait for its background interaction."""
     if not isinstance(message, str) or not message.strip():
@@ -28,8 +46,6 @@ def generate_reply(message: str) -> str:
 
     print(f"Preparing Gemini client. Model: {model}", flush=True)
 
-    # Background execution avoids keeping one HTTP request open while the
-    # model is generating. We poll the interaction until it completes.
     with genai.Client(
         api_key=api_key,
         http_options={
@@ -46,21 +62,50 @@ def generate_reply(message: str) -> str:
         )
 
         interaction_id = interaction.id
-        print("Gemini accepted the request. Waiting for completion...", flush=True)
+        print(
+            f"Gemini accepted the request. Interaction ID: {interaction_id}",
+            flush=True,
+        )
 
         deadline = time.monotonic() + 120
 
         while True:
-            interaction = client.interactions.get(interaction_id)
+            interaction = client.interactions.get(id=interaction_id)
             status = str(interaction.status).lower().split(".")[-1]
 
             if status == "completed":
                 break
 
-            if status in {"failed", "cancelled", "canceled"}:
-                error = getattr(interaction, "error", None)
+            if status in {"failed", "cancelled", "canceled", "incomplete", "budget_exceeded"}:
+                details = _format_api_error(getattr(interaction, "error", None))
+
+                # Background polling can expose only the terminal status.
+                # The streaming endpoint delivers structured ErrorEvents.
+                if status == "failed" and not details:
+                    print("Retrieving Gemini's detailed error event...", flush=True)
+                    try:
+                        for event in client.interactions.get(
+                            id=interaction_id,
+                            stream=True,
+                        ):
+                            if getattr(event, "event_type", None) == "error":
+                                details = _format_api_error(
+                                    getattr(event, "error", None)
+                                )
+                                if details:
+                                    break
+                    except Exception as stream_error:
+                        details = (
+                            "Could not retrieve the error event: "
+                            f"{type(stream_error).__name__}: {stream_error}"
+                        )
+
+                if not details:
+                    details = "Gemini returned a terminal status without error details."
+
                 raise RuntimeError(
-                    f"Gemini interaction {status}. Details: {error or 'No error details returned.'}"
+                    f"Gemini interaction {status}. "
+                    f"Interaction ID: {interaction_id}. Details: {details}"
                 )
 
             if time.monotonic() >= deadline:
@@ -75,7 +120,7 @@ def generate_reply(message: str) -> str:
     reply = interaction.output_text
     if not reply:
         raise RuntimeError(
-            "Gemini completed the interaction but returned no text."
+            f"Gemini interaction completed without text. Interaction ID: {interaction_id}"
         )
 
     print("Gemini response received.", flush=True)
