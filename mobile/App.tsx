@@ -143,9 +143,11 @@ export default function App() {
       setNearbyFacilities(items);
       setFacilityLookupStatus(items.length > 0 ? "available" : "empty");
       await cacheNearbyFacilities(items).catch(() => {});
-      setOfflinePackage((current) => current
-        ? { ...current, nearby_discovered_facilities: items, facility_discovery_status: "available" }
-        : current);
+      if (items.length > 0) {
+        setOfflinePackage((current) => current
+          ? { ...current, nearby_discovered_facilities: items, facility_discovery_status: "available" }
+          : current);
+      }
       setStatus(items.length > 0
         ? `Found ${items.length} nearby facility candidate(s)`
         : "No mapped emergency facilities returned within 10 km");
@@ -484,11 +486,9 @@ export default function App() {
     ...(offlinePackage?.nearby_discovered_facilities ?? []),
   ];
   const facilities: NearbyFacility[] =
-    facilityLookupStatus === "available" || facilityLookupStatus === "empty"
+    nearbyFacilities.length > 0
       ? nearbyFacilities
-      : nearbyFacilities.length > 0
-        ? nearbyFacilities
-        : (result?.nearby_facilities?.length ? result.nearby_facilities : packageFacilities);
+      : (result?.nearby_facilities?.length ? result.nearby_facilities : packageFacilities);
 
   if (!permissionsReady) {
     return (
@@ -705,7 +705,7 @@ export default function App() {
         {coordinates ? (
           <View style={styles.facilityCard}>
             <Text style={styles.sectionTitle}>Nearby emergency facilities</Text>
-            <Text style={styles.facilityHint}>Searching a 10 km radius. Community-mapped candidates remain unverified.</Text>
+            <Text style={styles.facilityHint}>Searching hospitals, clinics, police, fire stations, ambulance points, shelters and colleges within 10 km. Map candidates remain unverified.</Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
                 <ActivityIndicator color="#147A6A" />
@@ -719,7 +719,10 @@ export default function App() {
               </Text>
             ) : null}
             {facilityLookupStatus === "empty" && facilities.length === 0 ? (
-              <Text style={styles.facilityHint}>No mapped emergency facilities were returned within 10 km. This does not mean no services exist nearby; use 112 for urgent help.</Text>
+              <Text style={styles.facilityHint}>No mapped facilities were returned by the checked OpenStreetMap providers. This does not mean no hospitals, colleges or emergency services exist nearby; use 112 for urgent help.</Text>
+            ) : null}
+            {facilities.length > 0 && facilityLookupStatus === "error" ? (
+              <Text style={styles.facilityHint}>Showing previously saved nearby candidates because the live refresh failed.</Text>
             ) : null}
             {facilityLookupStatus === "idle" && facilities.length === 0 ? (
               <Text style={styles.facilityHint}>Nearby facility lookup will start when GPS is ready.</Text>
@@ -780,7 +783,7 @@ export default function App() {
             <Text style={styles.offlineButtonArrow}>↓</Text>
           </Pressable>
           <Text style={styles.offlineStatus}>{offlinePackage ? "Saved · " + new Date(offlinePackage.generated_at).toLocaleString() : "No saved package yet"}</Text>
-          {offlinePackage ? <Text style={styles.offlineStatus}>Nearby facilities saved: {(offlinePackage.nearby_verified_facilities?.length ?? 0) + (offlinePackage.nearby_discovered_facilities?.length ?? 0)} · {offlinePackage.facility_discovery_status ?? "facility discovery not refreshed"}</Text> : null}
+          {offlinePackage ? <Text style={styles.offlineStatus}>Nearby facilities saved: {(offlinePackage.nearby_verified_facilities?.length ?? 0) + (offlinePackage.nearby_discovered_facilities?.length ?? 0)} · {offlinePackage.nearby_discovered_facilities?.length ? "ready for offline use" : offlinePackage.facility_discovery_status ?? "no facility data saved yet"}</Text> : null}
           <Text style={styles.offlineWarning}>Offline mode uses cached emergency facilities and guidance. Full offline map tiles and road-by-road routing are not included yet.</Text>
         </View>
 
