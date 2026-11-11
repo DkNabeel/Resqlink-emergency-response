@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -43,6 +44,17 @@ class ResQLinkApiTests(unittest.TestCase):
         cls.temp_dir.cleanup()
 
     def setUp(self):
+        discovery_patch = patch(
+            "app.main.discover_facilities",
+            new=AsyncMock(return_value={
+                "count": 0,
+                "items": [],
+                "source": "OpenStreetMap contributors",
+                "cache_status": "test",
+            }),
+        )
+        discovery_patch.start()
+        self.addCleanup(discovery_patch.stop)
         connection = database_connection.get_connection()
         try:
             connection.execute("DELETE FROM facilities")
@@ -56,6 +68,68 @@ class ResQLinkApiTests(unittest.TestCase):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+
+    def test_emergency_chat_returns_dynamic_groq_reply(self):
+        fake_chat = {
+            "status": "connected",
+            "provider": "Groq API",
+            "model": "qwen-test-model",
+            "in_scope": True,
+            "emergency_type": "earthquake",
+            "urgency": "immediate",
+            "reply": "Move away from damaged structures. Are you indoors or outdoors?",
+            "follow_up_question": "Are you indoors or outdoors?",
+        }
+        with patch.dict(os.environ, {"GROQ_API_KEY": "integration-test-key", "AI_ENABLED": "true"}):
+            with patch("app.main.respond_to_emergency_chat", return_value=fake_chat):
+                response = self.client.post(
+                    "/emergency/chat",
+                    json={
+                        "message": "An earthquake has damaged the building",
+                        "language": "en",
+                        "conversation_history": [],
+                        "latitude": 12.9716,
+                        "longitude": 77.5946,
+                        "city": "Bengaluru",
+                        "district": "Bengaluru Urban",
+                        "state": "Karnataka",
+                    },
+                )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["in_scope"])
+        self.assertEqual(body["ai_status"], "connected")
+        self.assertEqual(body["emergency_type"], "earthquake")
+        self.assertIn("damaged structures", body["reply"])
+        self.assertEqual(body["emergency_contact"]["number"], "112")
+
+    def test_emergency_chat_rejects_unrelated_request(self):
+        fake_chat = {
+            "status": "connected",
+            "provider": "Groq API",
+            "model": "qwen-test-model",
+            "in_scope": False,
+            "emergency_type": "unknown",
+            "urgency": "unknown",
+            "reply": "ResQLink only handles emergency assistance.",
+            "follow_up_question": None,
+        }
+        with patch.dict(os.environ, {"GROQ_API_KEY": "integration-test-key", "AI_ENABLED": "true"}):
+            with patch("app.main.respond_to_emergency_chat", return_value=fake_chat):
+                response = self.client.post(
+                    "/emergency/chat",
+                    json={"message": "Solve my algebra homework", "language": "en"},
+                )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["in_scope"])
+        self.assertIn("only handles emergency", response.json()["reply"])
+
+    def test_emergency_chat_rejects_partial_gps_coordinates(self):
+        response = self.client.post(
+            "/emergency/chat",
+            json={"message": "There is a fire", "latitude": 12.9},
+        )
+        self.assertEqual(response.status_code, 422)
 
     def test_emergency_endpoint_returns_localized_guidance_and_112(self):
         response = self.client.post(
