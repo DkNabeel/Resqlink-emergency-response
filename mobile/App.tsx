@@ -121,7 +121,22 @@ export default function App() {
       setBackgroundMonitoringReady(permissions.backgroundEnabled);
       const ready = permissions.locationEnabled && permissions.notificationsEnabled;
       setPermissionsReady(ready);
-      if (ready) setStatus(permissions.message);
+      if (ready) {
+        setStatus(permissions.message);
+        // Capture GPS and seed the first offline package as soon as onboarding succeeds.
+        void (async () => {
+          try {
+            const point = await obtainLocation();
+            if (isApiConfigured()) {
+              const downloaded = await downloadOfflinePackage(point, language);
+              setOfflinePackage(downloaded.payload);
+              setStatus("GPS ready · nearby emergency information saved for offline use");
+            }
+          } catch (error) {
+            setLocationStatus(error instanceof Error ? error.message : "GPS or offline package is not ready yet.");
+          }
+        })();
+      }
     } catch (error) {
       setPermissionsReady(false);
       setPermissionMessage(error instanceof Error ? error.message : "Please enable location and notification permissions in Settings.");
