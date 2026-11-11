@@ -111,6 +111,8 @@ class EmergencyRequest(BaseModel):
     city: Optional[str] = Field(default=None, max_length=120)
     district: Optional[str] = Field(default=None, max_length=120)
     state: Optional[str] = Field(default=None, max_length=120)
+    include_weather: bool = True
+    weather_forecast_hours: int = Field(default=6, ge=1, le=24)
 
 
 class FacilityRequest(BaseModel):
@@ -232,7 +234,7 @@ def system_status():
 
 
 @app.post("/emergency")
-def receive_emergency(request: EmergencyRequest):
+async def receive_emergency(request: EmergencyRequest):
     has_latitude = request.latitude is not None
     has_longitude = request.longitude is not None
     if has_latitude != has_longitude:
@@ -245,6 +247,10 @@ def receive_emergency(request: EmergencyRequest):
     nearby_facilities = []
     nearby_alerts = []
     unverified_alerts = []
+    weather_context = {
+        "status": "not_requested",
+        "message": "Provide coordinates and set include_weather=true to request forecast context.",
+    }
 
     if has_latitude and has_longitude:
         suggested_types = set(result.get("recommended_facility_types", []))
@@ -277,6 +283,30 @@ def receive_emergency(request: EmergencyRequest):
                     "warning": "Location relation is unverified; inspect the original official alert.",
                 })
 
+        if request.include_weather:
+            try:
+                weather_data = await get_weather_snapshot(
+                    request.latitude,
+                    request.longitude,
+                    request.weather_forecast_hours,
+                )
+                weather_context = {
+                    "status": weather_data.get("cache_status", "available"),
+                    "data": weather_data,
+                    "note": "Forecast context only; not an official warning or a substitute for government alerts.",
+                }
+            except (WeatherServiceError, ValueError) as exc:
+                logger.warning("Emergency weather context unavailable: %s", exc)
+                weather_context = {
+                    "status": "unavailable",
+                    "message": "Weather provider is currently unavailable. Continue using official alerts and local responder instructions.",
+                }
+    elif request.include_weather:
+        weather_context = {
+            "status": "not_requested",
+            "message": "Weather context requires both latitude and longitude.",
+        }
+
     return {
         "status": "processed",
         "message": request.message.strip(),
@@ -290,6 +320,7 @@ def receive_emergency(request: EmergencyRequest):
         "nearby_facilities": nearby_facilities,
         "nearby_alerts": nearby_alerts,
         "unverified_alerts": unverified_alerts,
+        "weather_context": weather_context,
         "data_limitations": [
             "SACHET polygon endpoint currently returns HTTP 403 in this environment.",
             "District/locality text matching is not polygon-verified.",

@@ -71,6 +71,56 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertEqual(body["emergency_contact"]["number"], "112")
         self.assertTrue(body["guidance"])
 
+    def test_emergency_adds_weather_context_when_coordinates_are_supplied(self):
+        async def fake_weather(latitude, longitude, forecast_hours):
+            return {
+                "latitude": latitude,
+                "longitude": longitude,
+                "forecast_hours": [],
+                "source": "Open-Meteo",
+                "cache_status": "live",
+            }
+
+        from unittest.mock import patch
+        with patch("app.main.get_weather_snapshot", side_effect=fake_weather):
+            response = self.client.post(
+                "/emergency",
+                json={
+                    "message": "There is a flood nearby",
+                    "language": "en",
+                    "latitude": 12.9716,
+                    "longitude": 77.5946,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["weather_context"]["status"], "live")
+        self.assertEqual(
+            response.json()["weather_context"]["data"]["source"],
+            "Open-Meteo",
+        )
+
+    def test_emergency_continues_when_weather_provider_is_unavailable(self):
+        from unittest.mock import AsyncMock, patch
+        from app.services.weather_service import WeatherServiceError
+
+        with patch(
+            "app.main.get_weather_snapshot",
+            new=AsyncMock(side_effect=WeatherServiceError("offline")),
+        ):
+            response = self.client.post(
+                "/emergency",
+                json={
+                    "message": "There is a fire",
+                    "latitude": 12.9716,
+                    "longitude": 77.5946,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["emergency_type"], "fire")
+        self.assertEqual(response.json()["weather_context"]["status"], "unavailable")
+
     def test_emergency_rejects_partial_coordinates(self):
         response = self.client.post(
             "/emergency",
