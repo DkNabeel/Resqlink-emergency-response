@@ -43,35 +43,50 @@ Run from the repository root:
 uv sync
 ```
 
-## 4. Configure API settings in one local file
+## 4. Use the existing backend environment file
 
-All local Worker settings are kept together in the repository-root `.dev.vars` file. You do not need one file per API.
+Keep using the project's existing `backend/.env` and `backend/.env.example`. Do not create a second `.dev.vars` file or duplicate your API keys.
 
-Create your local file from the safe template:
+The tracked template is `backend/.env.example`. Your private local file is `backend/.env` (already gitignored). It contains the existing settings for Groq and OpenRouteService/HeiGIT, along with the other original backend settings.
+
+If you need to create the local file on a fresh clone, run:
 
 ```powershell
-Copy-Item .dev.vars.example .dev.vars
-notepad .dev.vars
+Copy-Item backend/.env.example backend/.env
 ```
 
-Add your Groq key to the `GROQ_API_KEY=` line and save. Do not add quotes unless they are part of the key. The root `.dev.vars` file is gitignored and must never be committed or shared.
+For Cloudflare local development, Wrangler expects local variables beside `wrangler.jsonc` (the repository root). Instead of copying the secrets into another file, load the existing `backend/.env` values into the current PowerShell process and tell Wrangler to include process environment variables:
 
-**API key requirements in this Cloudflare demo:**
+```powershell
+Get-Content .\backend\.env | ForEach-Object {
+    $line = $_.Trim()
+    if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+        $parts = $line -split "=", 2
+        $name = $parts[0].Trim()
+        $value = $parts[1].Trim().Trim('"').Trim("'")
+        [Environment]::SetEnvironmentVariable($name, $value, "Process")
+    }
+}
+$env:CLOUDFLARE_INCLUDE_PROCESS_ENV = "true"
+```
 
-- **Groq:** requires `GROQ_API_KEY`. This is the only API credential currently required by the Worker for AI classification.
-- **Open-Meteo weather:** no API key required.
-- **OpenStreetMap Overpass facility discovery:** no API key required.
-- **NDMA SACHET:** no API key, but background syncing is disabled in this stateless demo.
-- **OpenRouteService by HeiGIT:** requires `OPENROUTESERVICE_API_KEY`. The original backend uses it for road-based driving routes, distance and estimated journey time. It does **not** provide live traffic in the current implementation. The route service has not yet been migrated into the Cloudflare Worker, so adding the key now stores the setting in the central config but does not activate route requests from the deployed Worker.
-- `FACILITY_ADMIN_TOKEN`: belongs to an optional facility-verification feature in the original backend and is not used by this Cloudflare Worker yet.
+Run this in the same terminal session before `uv run pywrangler dev`. It reads your existing local file; it does not display or copy the secret values.
 
-For local testing, Wrangler reads `.dev.vars`. For the deployed Worker, add the Groq key separately as a Cloudflare secret (local files are not uploaded):
+**API configuration already present in `backend/.env.example`:**
+
+- **Groq:** `GROQ_API_KEY` — used by the current Cloudflare Worker for AI emergency-report classification.
+- **OpenRouteService by HeiGIT:** `OPENROUTESERVICE_API_KEY` — already used by the original backend for road-based routes, distance and estimated journey time. The route endpoint still needs to be migrated to the Cloudflare Worker before the deployed Worker can use it.
+- **Open-Meteo:** no API key required.
+- **OpenStreetMap Overpass:** no API key required.
+- **NDMA SACHET:** no API key; its background ingestion remains disabled in this stateless demo.
+
+For production, Cloudflare stores secrets separately from local files. Once ready to deploy, add the Groq key with:
 
 ```powershell
 uv run pywrangler secret put GROQ_API_KEY
 ```
 
-Paste the same Groq key when prompted. Never put it in the mobile app or commit it.
+Add `OPENROUTESERVICE_API_KEY` as a Cloudflare secret after the route endpoint is migrated into the Worker. Never commit or expose `backend/.env`.
 
 ## 5. Test locally first
 
