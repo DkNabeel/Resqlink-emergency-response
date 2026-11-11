@@ -23,6 +23,27 @@ python -m uvicorn app.main:app --reload
 
 API documentation: http://127.0.0.1:8000/docs
 
+## Free cloud deployment (Render)
+
+The repository includes a `render.yaml` Blueprint for deploying the existing FastAPI backend as a free Render web service.
+
+1. Sign in to Render and choose **New → Blueprint**.
+2. Connect this GitHub repository and select the `main` branch.
+3. Review the `resqlink-api` service and select the **Free** plan.
+4. Before or after the first deploy, open the service's **Environment** settings and add:
+   - `GROQ_API_KEY` (required for Groq classification)
+   - `OPENROUTESERVICE_API_KEY` (optional driving ETA)
+   - `FACILITY_ADMIN_TOKEN` (optional facility-verification protection)
+5. Deploy and wait for the service to become **Live**.
+6. Test `https://YOUR-SERVICE.onrender.com/health` and `/system/status`.
+
+Use the public Render URL as `EXPO_PUBLIC_API_BASE_URL` in `mobile/.env`, for example:
+`EXPO_PUBLIC_API_BASE_URL=https://YOUR-SERVICE.onrender.com`.
+Restart Expo after changing the mobile environment file.
+
+**Free-plan limitations:** Render free web services sleep after 15 minutes without incoming traffic and may take about a minute to wake on the next request. Their filesystem is ephemeral: the local SQLite database is reset after restarts, redeploys or sleep. The SACHET collector will repopulate alert data after startup, but manually entered facilities and other local database changes are not durable. This deployment is intended for demos/testing, not production emergency use. Do not rely on this prototype as an emergency dispatch service.
+
+
 ## API endpoints
 
 | Method | Endpoint | Purpose |
