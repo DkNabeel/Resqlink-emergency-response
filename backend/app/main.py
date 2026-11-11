@@ -362,16 +362,6 @@ async def emergency_chat(request: EmergencyChatRequest):
                     "verification_status": "verified",
                 })
 
-        try:
-            discovered = await discover_facilities(
-                request.latitude, request.longitude, request.radius_km
-            )
-            for facility in discovered.get("items", []):
-                if not suggested_types or facility.get("facility_type") in suggested_types:
-                    nearby_facilities.append(facility)
-        except Exception as exc:
-            logger.warning("Nearby facility discovery unavailable during chat: %s", type(exc).__name__)
-
     ai_analysis = {"status": "disabled"}
     ai_enabled = os.getenv("AI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
     if ai_enabled and os.getenv("GROQ_API_KEY", "").strip():
