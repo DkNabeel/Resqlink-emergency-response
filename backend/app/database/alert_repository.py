@@ -10,16 +10,19 @@ def _now():
 
 def _decode_alert(row):
     alert = dict(row)
-    for column, key in (
-        ("polygons_json", "polygons"),
-        ("circles_json", "circles"),
-        ("geocodes_json", "geocodes"),
-        ("references_json", "references"),
+    for column, key, fallback in (
+        ("polygons_json", "polygons", []),
+        ("circles_json", "circles", []),
+        ("geocodes_json", "geocodes", []),
+        ("references_json", "references", []),
+        ("languages_json", "languages", {}),
+        ("parameters_json", "parameters", []),
     ):
+        raw = alert.pop(column, None)
         try:
-            alert[key] = json.loads(alert.pop(column) or "[]")
+            alert[key] = json.loads(raw or ("{}" if fallback == {} else "[]"))
         except (TypeError, json.JSONDecodeError):
-            alert[key] = []
+            alert[key] = fallback
     return alert
 
 
@@ -35,13 +38,17 @@ def upsert_alert(alert):
                 severity, urgency, certainty, status, message_type,
                 effective_at, expires_at, published_at, area_description,
                 polygons_json, circles_json, geocodes_json, references_json,
-                source_url, raw_content, first_seen_at, last_seen_at
+                source_url, raw_content, first_seen_at, last_seen_at,
+                sender, scope, onset_at, cap_identifier,
+                languages_json, parameters_json
             ) VALUES (
                 :alert_id, :source, :title, :description, :event, :category,
                 :severity, :urgency, :certainty, :status, :message_type,
                 :effective_at, :expires_at, :published_at, :area_description,
                 :polygons_json, :circles_json, :geocodes_json, :references_json,
-                :source_url, :raw_content, :first_seen_at, :last_seen_at
+                :source_url, :raw_content, :first_seen_at, :last_seen_at,
+                :sender, :scope, :onset_at, :cap_identifier,
+                :languages_json, :parameters_json
             )
             ON CONFLICT(alert_id) DO UPDATE SET
                 source = excluded.source,
@@ -64,6 +71,12 @@ def upsert_alert(alert):
                 references_json = excluded.references_json,
                 source_url = excluded.source_url,
                 raw_content = excluded.raw_content,
+                sender = excluded.sender,
+                scope = excluded.scope,
+                onset_at = excluded.onset_at,
+                cap_identifier = excluded.cap_identifier,
+                languages_json = excluded.languages_json,
+                parameters_json = excluded.parameters_json,
                 last_seen_at = excluded.last_seen_at
             """,
             {
@@ -82,14 +95,20 @@ def upsert_alert(alert):
                 "expires_at": alert.get("expires_at"),
                 "published_at": alert.get("published_at"),
                 "area_description": alert.get("area_description"),
-                "polygons_json": json.dumps(alert.get("polygons", [])),
-                "circles_json": json.dumps(alert.get("circles", [])),
-                "geocodes_json": json.dumps(alert.get("geocodes", [])),
-                "references_json": json.dumps(alert.get("references", [])),
+                "polygons_json": json.dumps(alert.get("polygons", []), ensure_ascii=False),
+                "circles_json": json.dumps(alert.get("circles", []), ensure_ascii=False),
+                "geocodes_json": json.dumps(alert.get("geocodes", []), ensure_ascii=False),
+                "references_json": json.dumps(alert.get("references", []), ensure_ascii=False),
                 "source_url": alert.get("source_url"),
                 "raw_content": (alert.get("raw_content") or "")[:4000],
                 "first_seen_at": now,
                 "last_seen_at": now,
+                "sender": alert.get("sender"),
+                "scope": alert.get("scope"),
+                "onset_at": alert.get("onset_at"),
+                "cap_identifier": alert.get("cap_identifier"),
+                "languages_json": json.dumps(alert.get("languages", {}), ensure_ascii=False),
+                "parameters_json": json.dumps(alert.get("parameters", []), ensure_ascii=False),
             },
         )
         connection.commit()
@@ -201,5 +220,49 @@ def get_alert_count():
     try:
         row = connection.execute("SELECT COUNT(*) AS count FROM alerts").fetchone()
         return int(row["count"])
+    finally:
+        connection.close()
+
+
+def get_document_cache(document_url):
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM external_document_cache WHERE document_url = ?",
+            (document_url,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        connection.close()
+
+
+def save_document_cache(
+    document_url, content, *, etag=None, last_modified=None, http_status=200
+):
+    connection = get_connection()
+    try:
+        connection.execute(
+            """
+            INSERT INTO external_document_cache (
+                document_url, etag, last_modified, content, fetched_at,
+                last_http_status
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(document_url) DO UPDATE SET
+                etag = COALESCE(excluded.etag, external_document_cache.etag),
+                last_modified = COALESCE(excluded.last_modified, external_document_cache.last_modified),
+                content = excluded.content,
+                fetched_at = excluded.fetched_at,
+                last_http_status = excluded.last_http_status
+            """,
+            (
+                document_url,
+                etag,
+                last_modified,
+                content,
+                _now(),
+                http_status,
+            ),
+        )
+        connection.commit()
     finally:
         connection.close()

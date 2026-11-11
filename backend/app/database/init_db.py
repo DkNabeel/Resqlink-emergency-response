@@ -1,10 +1,19 @@
 from app.database.connection import get_connection
 
 
-def create_tables():
-    """Create all ResQLink tables without disturbing existing facility data."""
-    connection = get_connection()
+ALERT_COLUMN_MIGRATIONS = {
+    "sender": "TEXT",
+    "scope": "TEXT",
+    "onset_at": "TEXT",
+    "cap_identifier": "TEXT",
+    "languages_json": "TEXT NOT NULL DEFAULT '{}'",
+    "parameters_json": "TEXT NOT NULL DEFAULT '[]'",
+}
 
+
+def create_tables():
+    """Create ResQLink tables and safely add newer alert fields."""
+    connection = get_connection()
     try:
         connection.execute("""
             CREATE TABLE IF NOT EXISTS facilities (
@@ -42,7 +51,34 @@ def create_tables():
                 source_url TEXT,
                 raw_content TEXT,
                 first_seen_at TEXT NOT NULL,
-                last_seen_at TEXT NOT NULL
+                last_seen_at TEXT NOT NULL,
+                sender TEXT,
+                scope TEXT,
+                onset_at TEXT,
+                cap_identifier TEXT,
+                languages_json TEXT NOT NULL DEFAULT '{}',
+                parameters_json TEXT NOT NULL DEFAULT '[]'
+            )
+        """)
+
+        # Add columns to existing databases without deleting any stored records.
+        existing_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(alerts)")
+        }
+        for column, definition in ALERT_COLUMN_MIGRATIONS.items():
+            if column not in existing_columns:
+                connection.execute(
+                    f"ALTER TABLE alerts ADD COLUMN {column} {definition}"
+                )
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS external_document_cache (
+                document_url TEXT PRIMARY KEY,
+                etag TEXT,
+                last_modified TEXT,
+                content TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                last_http_status INTEGER
             )
         """)
 
