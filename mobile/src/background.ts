@@ -117,7 +117,6 @@ async function refreshPackageForLocation(
         body: (alert.title || alert.event || "An official alert matches your saved location.").slice(0, 220),
         sound: "default",
         priority: Notifications.AndroidNotificationPriority.MAX,
-        channelId: ALERT_CHANNEL,
         data: { alertId, source: "SACHET" },
       },
       trigger: null,
