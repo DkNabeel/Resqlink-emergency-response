@@ -318,7 +318,12 @@ const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
 };
 
 const OFFLINE_TERMS: Record<string, string[]> = {
-  fire: ["fire", "smoke", "आग", "धुआँ", "ಬೆಂಕಿ", "ಹೊಗೆ"],
+  fire: ["fire", "smoke", "burning", "flames", "आग", "धुआँ", "जल रहा", "ಬೆಂಕಿ", "ಹೊಗೆ"],
+  cyclone: ["cyclone", "hurricane", "typhoon", "storm surge", "चक्रवात", "तूफान", "ಚಂಡಮಾರುತ", "ಸುಂಟರಗಾಳಿ"],
+  landslide: ["landslide", "mudslide", "slope collapse", "falling rocks", "भूस्खलन", "पहाड़ खिसक", "ಭೂಕುಸಿತ", "ಬೆಟ್ಟ ಕುಸಿತ"],
+  tsunami: ["tsunami", "sea wave warning", "ocean surge", "सुनामी", "समुद्री लहर", "ಸುನಾಮಿ"],
+  lightning: ["lightning", "thunderstorm", "thunder strike", "बिजली गिर", "आकाशीय बिजली", "ಮಿಂಚು", "ಸಿಡಿಲು"],
+  road_accident: ["road accident", "car crash", "vehicle crash", "collision", "bike accident", "सड़क हादसा", "दुर्घटना", "ರಸ್ತೆ ಅಪಘಾತ", "ವಾಹನ ಡಿಕ್ಕಿ"],
   flood: ["flood", "flooding", "बाढ़", "ಪ್ರವಾಹ", "ನೀರು ತುಂಬ"],
   earthquake: ["earthquake", "tremor", "भूकंप", "ಭೂಕಂಪ", "ನೆಲ ನಡುಗ"],
   cyclone: ["cyclone", "चक्रवात", "ಚಂಡಮಾರುತ"],
@@ -328,7 +333,8 @@ const OFFLINE_TERMS: Record<string, string[]> = {
   gas_leak: ["gas leak", "gas smell", "गैस रिसाव", "ಅನಿಲ ಸೋರಿಕೆ"],
   medical: ["unconscious", "bleeding", "बेहोश", "रक्तस्राव", "ಪ್ರಜ್ಞೆ ಇಲ್ಲ", "ರಕ್ತಸ್ರಾವ"],
   road_accident: ["road accident", "car crash", "दुर्घटना", "ರಸ್ತೆ ಅಪಘಾತ"],
-  violence: ["assault", "attack", "attacker", "gunfire", "gunshots", "shooting", "war", "war zone", "armed conflict", "bombing", "air raid", "shelling", "missile", "civil unrest", "हमला", "युद्ध", "गोलीबारी", "बमबारी", "हवाई हमला", "ದಾಳಿ", "ಹಲ್ಲೆ", "ಯುದ್ಧ", "ಗುಂಡಿನ ದಾಳಿ", "ಬಾಂಬ್ ದಾಳಿ"],
+  violence: ["assault", "attack", "attacker", "gunfire", "gunshots", "shooting", "war", "war zone", "armed conflict", "bombing", "air raid", "shelling", "missile", "explosion", "bomb", "civil unrest", "हमला", "युद्ध", "गोलीबारी", "बमबारी", "हवाई हमला", "ದಾಳಿ", "ಹಲ್ಲೆ", "ಯುದ್ಧ", "ಗುಂಡಿನ ದಾಳಿ", "ಬಾಂಬ್ ದಾಳಿ"],
+  general: ["emergency", "help me", "sos", "trapped", "stranded", "i am stuck", "i'm stuck", "people are injured", "building collapsed", "collapse", "explosion", "debris", "danger", "मदद", "फँसा", "आपातकाल", "ಸಹಾಯ", "ಸಿಲುಕಿಕೊಂಡಿದ್ದೇನೆ", "ತುರ್ತು ಪರಿಸ್ಥಿತಿ"],
 };
 
 export function getOfflineGuidance(
@@ -342,7 +348,10 @@ export function getOfflineGuidance(
       terms.some((term) => normalized.includes(term.toLocaleLowerCase())),
     )?.[0] ?? "unknown";
   const normalizedLanguage = language in BUILT_IN_OFFLINE_GUIDANCE ? language : "en";
-  if (category === "unknown") {
+  const generalEmergencyDetected = (OFFLINE_TERMS.general ?? []).some((term) =>
+    normalized.includes(term.toLocaleLowerCase()),
+  );
+  if (category === "unknown" && !generalEmergencyDetected) {
     const outOfScope = {
       en: "ResQLink works only for emergency situations. Describe the danger you are facing, such as fire, flooding, injury or violence.",
       hi: "ResQLink केवल आपातकालीन स्थितियों के लिए है। कृपया आग, बाढ़, चोट या हिंसा जैसे खतरे का वर्णन करें।",
