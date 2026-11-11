@@ -233,9 +233,10 @@ def system_status():
                 "api_key_required": False,
             },
             "traffic": {
-                "provider": "Google Maps Routes API",
-                "api_key_configured": bool(os.getenv("GOOGLE_MAPS_ROUTES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY")),
-                "traffic_aware_routes": True,
+                "provider": "OpenRouteService (HeiGIT)",
+                "api_key_configured": bool(os.getenv("OPENROUTESERVICE_API_KEY")),
+                "live_traffic_available": False,
+                "route_estimates": "road_network_based",
             },
             "facility_discovery": {
                 "provider": "OpenStreetMap Overpass API",
