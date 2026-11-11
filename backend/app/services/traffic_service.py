@@ -65,6 +65,7 @@ async def get_traffic_route(
     origin_longitude,
     destination_latitude,
     destination_longitude,
+    api_key=None,
 ):
     try:
         origin_latitude, origin_longitude, destination_latitude, destination_longitude = (
@@ -84,7 +85,11 @@ async def get_traffic_route(
     ):
         raise ValueError("Longitude must be between -180 and 180.")
 
-    api_key = os.getenv("OPENROUTESERVICE_API_KEY", "").strip()
+    # Cloudflare Worker secrets are passed explicitly by the Worker binding.
+    # The optional fallback preserves the original standalone FastAPI backend.
+    if api_key is None:
+        api_key = os.getenv("OPENROUTESERVICE_API_KEY", "")
+    api_key = str(api_key or "").strip()
     if not api_key:
         raise TrafficNotConfigured(
             "Configure OPENROUTESERVICE_API_KEY to enable driving routes."
