@@ -196,6 +196,6 @@ export function getOfflineGuidance(
     guidance: instructions,
     emergency_contact: cachedPackage?.emergency_contact ?? { number: "112", dial_uri: "tel:112" },
     safety_notice: fallbackNotice[language] ?? fallbackNotice.en,
-    note: "The server, Gemini, live weather and new alerts are unavailable offline. This local keyword match may be incomplete.",
+    note: "The server, Groq AI, live weather and new alerts are unavailable offline. This local keyword match may be incomplete.",
   };
 }
