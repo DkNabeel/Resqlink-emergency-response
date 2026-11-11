@@ -767,18 +767,56 @@ class ResQLinkApiTests(unittest.TestCase):
                 "items": [{
                     "name": "Open Data Hospital",
                     "facility_type": "hospital",
+                    "latitude": 12.971,
+                    "longitude": 77.591,
+                    "distance_km": 0.2,
                     "verification_status": "unverified",
                 }],
                 "source": "OpenStreetMap contributors",
                 "cache_status": "live",
+                "raw_element_count": 1,
+                "provider_endpoint": "https://overpass.osm.ch/api/interpreter",
             }),
         ):
-            response = self.client.get(
-                "/facilities/discover",
-                params={"latitude": 12.97, "longitude": 77.59, "radius_km": 5},
-            )
+            with patch("app.main.get_all_facilities", return_value=[]):
+                response = self.client.get(
+                    "/facilities/discover",
+                    params={"latitude": 12.97, "longitude": 77.59, "radius_km": 5},
+                )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["items"][0]["verification_status"], "unverified")
+        body = response.json()
+        self.assertEqual(body["items"][0]["verification_status"], "unverified")
+        self.assertEqual(body["osm_candidate_count"], 1)
+        self.assertEqual(body["raw_element_count"], 1)
+
+    def test_facility_discovery_keeps_verified_directory_when_overpass_is_down(self):
+        from unittest.mock import AsyncMock, patch
+
+        verified = {
+            "id": 7,
+            "name": "Verified Community Hospital",
+            "facility_type": "hospital",
+            "latitude": 12.971,
+            "longitude": 77.591,
+            "verification_status": "verified",
+            "source_name": "District Health Office",
+        }
+        with patch(
+            "app.main.discover_facilities",
+            AsyncMock(side_effect=RuntimeError("All Overpass endpoints failed")),
+        ):
+            with patch("app.main.get_all_facilities", return_value=[verified]):
+                response = self.client.get(
+                    "/facilities/discover",
+                    params={"latitude": 12.97, "longitude": 77.59, "radius_km": 5},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["count"], 1)
+        self.assertEqual(body["verified_project_count"], 1)
+        self.assertEqual(body["osm_status"], "unavailable")
+        self.assertEqual(body["items"][0]["verification_status"], "verified")
 
     def test_weather_endpoint_can_return_provider_data(self):
         async def fake_weather(latitude, longitude, forecast_hours):
