@@ -130,7 +130,7 @@ class ResQLinkApiTests(unittest.TestCase):
         fake_result = {
             "status": "connected",
             "provider": "Groq API",
-            "model": "gemini-test-model",
+            "model": "qwen-test-model",
             "emergency_type": "gas_leak",
             "confidence": "high",
             "short_summary": "A gas leak is reported.",
@@ -167,7 +167,7 @@ class ResQLinkApiTests(unittest.TestCase):
                     json={
                         "message": "There is a fire and smoke",
                         "language": "en",
-                        "use_gemini": True,
+                        "use_ai": True,
                     },
                 )
         self.assertEqual(response.status_code, 200)
