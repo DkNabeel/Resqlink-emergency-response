@@ -21,6 +21,11 @@ from app.services.emergency_service import (
 )
 from app.services.weather_service import WeatherServiceError, get_weather_snapshot
 from app.services.facility_discovery_service import discover_facilities
+from app.services.traffic_service import (
+    TrafficNotConfigured,
+    TrafficServiceError,
+    get_traffic_route,
+)
 
 
 app = FastAPI(
@@ -47,6 +52,13 @@ class EmergencyRequest(BaseModel):
         if not value.strip():
             raise ValueError("Emergency message cannot be blank.")
         return value.strip()
+
+
+class TrafficRouteRequest(BaseModel):
+    origin_latitude: float = Field(ge=-90, le=90)
+    origin_longitude: float = Field(ge=-180, le=180)
+    destination_latitude: float = Field(ge=-90, le=90)
+    destination_longitude: float = Field(ge=-180, le=180)
 
 
 def _env(request: Request, name: str, default: str = "") -> str:
@@ -186,6 +198,7 @@ async def health():
 @app.get("/system/status")
 async def system_status(request: Request):
     key_configured = bool(_env(request, "GROQ_API_KEY").strip())
+    routing_key_configured = bool(_env(request, "OPENROUTESERVICE_API_KEY").strip())
     return {
         "api": {"status": "ok", "version": app.version},
         "database": {
@@ -217,6 +230,18 @@ async def system_status(request: Request):
                 "fallback_model": _env(request, "GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b"),
                 "integration": "async_chat_completions_json_mode",
                 "note": "Optional Groq classification; local multilingual keyword detection and curated guidance remain available if AI is not configured.",
+            },
+            "routing": {
+                "provider": "OpenRouteService (HeiGIT)",
+                "enabled": routing_key_configured,
+                "api_key_configured": routing_key_configured,
+                "endpoint": "POST /routes/traffic",
+                "travel_mode": "driving-car",
+                "live_traffic_available": False,
+                "note": (
+                    "Road-network route, distance and estimated journey time. "
+                    "Live traffic congestion is not included."
+                ),
             },
         },
         "mobile": {
@@ -417,6 +442,25 @@ async def nearby_weather(
         return await get_weather_snapshot(latitude, longitude, forecast_hours)
     except (WeatherServiceError, ValueError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)[:200]) from exc
+
+
+@app.post("/routes/traffic")
+async def traffic_route(payload: TrafficRouteRequest, request: Request):
+    api_key = _env(request, "OPENROUTESERVICE_API_KEY").strip()
+    try:
+        return await get_traffic_route(
+            payload.origin_latitude,
+            payload.origin_longitude,
+            payload.destination_latitude,
+            payload.destination_longitude,
+            api_key=api_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TrafficNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except TrafficServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/facilities/discover")
