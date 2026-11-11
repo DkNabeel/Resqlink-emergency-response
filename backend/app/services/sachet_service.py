@@ -430,28 +430,55 @@ async def sync_sachet_feed(feed_url=None):
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             response = await client.get(feed_url, headers=headers)
+            feed_headers = response.headers
+            feed_http_status = response.status_code
 
             if response.status_code == 304:
-                update_feed_state(feed_url, http_status=304, success=True)
-                return {
-                    "status": "not_modified",
-                    "new_alerts": 0,
-                    "enriched_alerts": 0,
-                    "polygon_alerts": 0,
-                    "feed_url": feed_url,
-                    "http_status": 304,
-                }
+                # Reuse the cached RSS body so the existing alert list is still
+                # re-enriched with CAP documents on every collector cycle.
+                cached_rss = get_document_cache(feed_url)
+                if cached_rss and cached_rss.get("content"):
+                    rss_content = cached_rss["content"]
+                else:
+                    # Older installations may have an ETag but no cached body.
+                    unconditional_headers = {
+                        "Accept": headers["Accept"],
+                        "User-Agent": headers["User-Agent"],
+                    }
+                    full_response = await client.get(
+                        feed_url, headers=unconditional_headers
+                    )
+                    full_response.raise_for_status()
+                    rss_content = full_response.text
+                    feed_headers = full_response.headers
+                    feed_http_status = full_response.status_code
+                    save_document_cache(
+                        feed_url,
+                        rss_content,
+                        etag=feed_headers.get("ETag"),
+                        last_modified=feed_headers.get("Last-Modified"),
+                        http_status=feed_http_status,
+                    )
+            else:
+                response.raise_for_status()
+                rss_content = response.text
+                save_document_cache(
+                    feed_url,
+                    rss_content,
+                    etag=feed_headers.get("ETag"),
+                    last_modified=feed_headers.get("Last-Modified"),
+                    http_status=feed_http_status,
+                )
 
-            response.raise_for_status()
-            alerts = parse_sachet_feed(response.content)
+            alerts = parse_sachet_feed(rss_content)
             alerts, enriched_count, polygon_count = await _enrich_alerts(client, alerts)
             upsert_alerts(alerts)
 
         update_feed_state(
             feed_url,
-            etag=response.headers.get("ETag"),
-            last_modified=response.headers.get("Last-Modified"),
-            http_status=response.status_code,
+            etag=feed_headers.get("ETag"),
+            last_modified=feed_headers.get("Last-Modified"),
+            http_status=feed_http_status,
             success=True,
         )
 
