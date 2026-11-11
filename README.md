@@ -41,7 +41,8 @@ API documentation: http://127.0.0.1:8000/docs
 | DELETE | /facilities/{facility_id} | Delete a facility |
 | POST | /facilities/{facility_id}/verification | Verify/unverify a facility with admin token |
 | GET | /facilities/nearby | Search facilities by straight-line distance |
-| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |\n| GET | /offline/package | Download language-specific guides, 112, nearby verified facilities and location-matched alert snapshot for mobile caching |
+| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |
+| GET | /offline/package | Download language-specific guides, 112, nearby verified facilities and location-matched alert snapshot for mobile caching |
 
 ## Emergency request example
 

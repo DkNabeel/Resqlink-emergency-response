@@ -90,7 +90,7 @@ app = FastAPI(
         "Backend API for multilingual emergency assistance, official alert "
         "collection, location resilience and nearby facility information."
     ),
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
