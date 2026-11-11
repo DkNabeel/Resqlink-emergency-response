@@ -109,6 +109,7 @@ async def get_traffic_route(
         "Authorization": api_key,
         "Accept": "application/json",
         "Content-Type": "application/json",
+        "Accept-Encoding": "identity",
     }
 
     try:
