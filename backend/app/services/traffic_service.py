@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import httpx
 
 ROUTES_URL = (
-    "https://api.heigit.org/openrouteservice/v2/directions/driving-car"
+    "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson"
 )
 
 
@@ -20,11 +20,21 @@ class TrafficServiceError(RuntimeError):
 def normalize_route_response(payload):
     """Normalize an OpenRouteService directions response."""
     routes = payload.get("routes") if isinstance(payload, dict) else None
-    if not routes:
+    features = payload.get("features") if isinstance(payload, dict) else None
+    if routes:
+        route = routes[0]
+        summary = route.get("summary") or {}
+        geometry = route.get("geometry")
+    elif features:
+        # The /geojson endpoint returns a FeatureCollection. ORS keeps the
+        # route summary in feature.properties and the LineString in geometry.
+        route = features[0]
+        properties = route.get("properties") or {}
+        summary = properties.get("summary") or {}
+        geometry = route.get("geometry")
+    else:
         raise TrafficServiceError("The route provider returned no driving route.")
 
-    route = routes[0]
-    summary = route.get("summary") or {}
     duration = summary.get("duration")
     distance = summary.get("distance")
     if (
@@ -37,7 +47,6 @@ def normalize_route_response(payload):
             "The route response is missing a valid ETA or distance."
         )
 
-    geometry = route.get("geometry")
     encoded_polyline = geometry if isinstance(geometry, str) else None
     route_geometry = geometry if isinstance(geometry, dict) else None
 
@@ -99,7 +108,6 @@ async def get_traffic_route(
         "units": "m",
         "instructions": False,
         "geometry": True,
-        "geometry_format": "geojson",
     }
     headers = {
         "Authorization": api_key,
