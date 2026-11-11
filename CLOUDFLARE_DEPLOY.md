@@ -138,6 +138,7 @@ Restart Expo after changing `.env`.
 
 - FastAPI routes running on Cloudflare Python Workers.
 - Groq classification when `GROQ_API_KEY` is configured.
+- HeiGIT/OpenRouteService driving route, road distance and estimated journey time at `POST /routes/traffic` when `OPENROUTESERVICE_API_KEY` is configured.
 - Multilingual English/Hindi/Kannada rule-based fallback.
 - Curated emergency instructions and India emergency number 112.
 - On-demand Open-Meteo weather when the emergency request includes GPS and `include_weather=true`.
