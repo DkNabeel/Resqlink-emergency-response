@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,8 @@ from fastapi.testclient import TestClient
 
 import app.database.connection as database_connection
 from app.main import app
+from app.database.init_db import create_tables
+from app.database.facility_repository import get_all_facilities
 
 
 class ResQLinkApiTests(unittest.TestCase):
@@ -149,6 +152,103 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertEqual(deleted.status_code, 200)
         missing = self.client.delete(f"/facilities/{facility_id}")
         self.assertEqual(missing.status_code, 404)
+
+    def test_system_status_is_transparent_about_unimplemented_mobile_and_gemini(self):
+        response = self.client.get("/system/status")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body["providers"]["gemini"]["endpoint_connected"])
+        self.assertEqual(body["mobile"]["on_device_offline_cache"], "not_implemented")
+        self.assertEqual(body["providers"]["weather"]["provider"], "Open-Meteo")
+
+    def test_blank_inputs_are_rejected(self):
+        emergency = self.client.post("/emergency", json={"message": "   "})
+        self.assertEqual(emergency.status_code, 422)
+
+        facility = self.client.post(
+            "/facilities",
+            json={
+                "name": "   ",
+                "facility_type": "hospital",
+                "latitude": 12.9,
+                "longitude": 77.5,
+            },
+        )
+        self.assertEqual(facility.status_code, 422)
+
+    def test_emergency_returns_only_relevant_facility_types(self):
+        self.client.post(
+            "/facilities",
+            json={
+                "name": "Demo Hospital",
+                "facility_type": "hospital",
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+            },
+        )
+        self.client.post(
+            "/facilities",
+            json={
+                "name": "Demo Fire Station",
+                "facility_type": "fire_station",
+                "latitude": 12.9717,
+                "longitude": 77.5947,
+            },
+        )
+        response = self.client.post(
+            "/emergency",
+            json={
+                "message": "Someone is unconscious",
+                "language": "en",
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+                "radius_km": 2,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        returned_types = {item["facility_type"] for item in response.json()["nearby_facilities"]}
+        self.assertEqual(returned_types, {"hospital"})
+
+    def test_legacy_facility_database_migration_preserves_records(self):
+        original_path = database_connection.DATABASE_PATH
+        with tempfile.TemporaryDirectory() as folder:
+            legacy_path = Path(folder) / "legacy.sqlite3"
+            database_connection.DATABASE_PATH = legacy_path
+            connection = sqlite3.connect(legacy_path)
+            try:
+                connection.execute(
+                    """
+                    CREATE TABLE facilities (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        facility_type TEXT NOT NULL,
+                        latitude REAL NOT NULL,
+                        longitude REAL NOT NULL,
+                        address TEXT,
+                        phone TEXT
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO facilities
+                        (name, facility_type, latitude, longitude, address, phone)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    ("Legacy Clinic", "hospital", 12.9, 77.5, "Legacy address", "000"),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            try:
+                create_tables()
+                records = get_all_facilities()
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0]["name"], "Legacy Clinic")
+                self.assertEqual(records[0]["verification_status"], "unverified")
+            finally:
+                database_connection.DATABASE_PATH = original_path
 
     def test_location_save_and_last_known(self):
         saved = self.client.post(

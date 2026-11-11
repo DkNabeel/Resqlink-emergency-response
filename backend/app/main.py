@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Load backend/.env here as well as in individual services. FastAPI does not
 # automatically load a .env file unless the server is started with --env-file.
@@ -93,6 +93,13 @@ app = FastAPI(
 class EmergencyRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     language: Literal["en", "hi", "kn"] = "en"
+
+    @field_validator("message")
+    @classmethod
+    def message_must_not_be_blank(cls, value):
+        if not value.strip():
+            raise ValueError("Emergency message cannot be blank.")
+        return value.strip()
     latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     radius_km: float = Field(default=10, gt=0, le=200)
@@ -104,6 +111,13 @@ class EmergencyRequest(BaseModel):
 class FacilityRequest(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     facility_type: Literal["hospital", "police", "fire_station", "ambulance", "shelter", "other"]
+
+    @field_validator("name")
+    @classmethod
+    def facility_name_must_not_be_blank(cls, value):
+        if not value.strip():
+            raise ValueError("Facility name cannot be blank.")
+        return value.strip()
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     address: Optional[str] = Field(default=None, max_length=300)
@@ -114,6 +128,13 @@ class FacilityRequest(BaseModel):
 class FacilityVerificationRequest(BaseModel):
     verification_status: Literal["verified", "unverified"]
     verification_note: str = Field(min_length=8, max_length=500)
+
+    @field_validator("verification_note")
+    @classmethod
+    def verification_note_must_not_be_blank(cls, value):
+        if len(value.strip()) < 8:
+            raise ValueError("Verification note must contain at least 8 non-space characters.")
+        return value.strip()
 
 
 class LocationResolveRequest(BaseModel):
@@ -223,7 +244,7 @@ def receive_emergency(request: EmergencyRequest):
     if has_latitude and has_longitude:
         suggested_types = set(result.get("recommended_facility_types", []))
         for facility in get_all_facilities():
-            if suggested_types and facility["facility_type"] not in suggested_types:
+            if facility["facility_type"] not in suggested_types:
                 continue
             distance = haversine_km(
                 request.latitude,

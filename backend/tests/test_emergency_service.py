@@ -24,6 +24,32 @@ class EmergencyIntentTests(unittest.TestCase):
         self.assertEqual(result["emergency_type"], "unknown")
         self.assertTrue(result["guidance"])
 
+    def test_gas_leak_detected(self):
+        result = build_emergency_response("I smell a gas leak", "en")
+        self.assertEqual(result["emergency_type"], "gas_leak")
+        self.assertIn("fire_station", result["recommended_facility_types"])
+
+    def test_cyclone_detected_in_hindi(self):
+        result = build_emergency_response("चक्रवात आने वाला है", "hi")
+        self.assertEqual(result["emergency_type"], "cyclone")
+        self.assertEqual(result["language"], "hi")
+
+    def test_landslide_detected_in_kannada(self):
+        result = build_emergency_response("ಬೆಟ್ಟ ಕುಸಿತ ಆಗುತ್ತಿದೆ", "kn")
+        self.assertEqual(result["emergency_type"], "landslide")
+        self.assertIn("shelter", result["recommended_facility_types"])
+
+    def test_multiple_emergency_types_are_reported(self):
+        result = detect_emergency("There is a fire after an earthquake")
+        self.assertEqual(result["emergency_type"], "fire")
+        self.assertTrue(result["multiple_emergency_types_detected"])
+        self.assertIn("earthquake", result["all_detected_types"])
+
+    def test_india_emergency_number_is_included(self):
+        result = build_emergency_response("Someone is unconscious", "en")
+        self.assertEqual(result["emergency_contact"]["number"], "112")
+        self.assertEqual(result["emergency_contact"]["dial_uri"], "tel:112")
+
 
 if __name__ == "__main__":
     unittest.main()
