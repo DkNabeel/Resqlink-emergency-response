@@ -1012,11 +1012,71 @@ async def discover_nearby_facilities(
     radius_km: float = Query(default=5, ge=1, le=20),
 ):
     try:
-        return await discover_facilities(latitude, longitude, radius_km)
+        discovery = await discover_facilities(latitude, longitude, radius_km)
+        osm_status = "available"
+        osm_error = None
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        # Keep the finder useful when public Overpass servers are temporarily
+        # unavailable: verified project records can still be returned.
+        logger.warning("OpenStreetMap facility discovery failed: %s", exc)
+        discovery = {
+            "count": 0,
+            "items": [],
+            "source": "OpenStreetMap contributors",
+            "radius_km": radius_km,
+            "raw_element_count": 0,
+            "excluded_element_count": 0,
+            "provider_endpoint": None,
+            "cache_status": "unavailable",
+            "note": "OpenStreetMap discovery is temporarily unavailable.",
+        }
+        osm_status = "unavailable"
+        osm_error = str(exc)[:240]
+
+    verified_facilities = []
+    for facility in get_all_facilities(verification_status="verified", limit=1000):
+        distance = haversine_km(
+            latitude,
+            longitude,
+            float(facility["latitude"]),
+            float(facility["longitude"]),
+        )
+        if distance <= radius_km:
+            verified_facilities.append({
+                **facility,
+                "distance_km": round(distance, 2),
+                "source_name": facility.get("source_name") or "ResQLink verified directory",
+                "verification_status": "verified",
+            })
+
+    # Verified project directory entries take priority when the same place
+    # also appears in OpenStreetMap. Unverified OSM candidates remain labelled.
+    combined = []
+    seen = set()
+    for facility in verified_facilities + discovery.get("items", []):
+        key = (
+            str(facility.get("name") or "").strip().casefold(),
+            round(float(facility["latitude"]), 5),
+            round(float(facility["longitude"]), 5),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        combined.append(facility)
+    combined.sort(key=lambda item: float(item.get("distance_km", 999)))
+
+    return {
+        **discovery,
+        "count": len(combined),
+        "items": combined,
+        "verified_project_count": len(verified_facilities),
+        "osm_candidate_count": len(discovery.get("items", [])),
+        "osm_status": osm_status,
+        "osm_error": osm_error,
+        "important": "Verified project records and unverified OpenStreetMap candidates are shown separately. Verify candidate details before relying on them.",
+    }
 
 
 @app.get("/weather/nearby")
