@@ -30,7 +30,12 @@ from app.database.facility_repository import (
 )
 from app.database.init_db import create_tables
 from app.database.location_repository import get_last_location, save_location
-from app.services.emergency_service import build_emergency_response
+from app.services.emergency_service import (
+    EMERGENCY_CONTACT_INDIA,
+    FACILITY_SUGGESTIONS,
+    GUIDANCE,
+    build_emergency_response,
+)
 from app.services.geospatial_service import haversine_km, match_alert_location
 from app.services.location_service import estimate_location_from_ip
 from app.services.sachet_service import DEFAULT_SACHET_FEED, sync_sachet_feed
@@ -476,6 +481,113 @@ def last_known_location(device_id: str):
         record,
         message="Saved location; check its age before using it for location-sensitive guidance.",
     )
+
+
+@app.get("/offline/package")
+def create_offline_package(
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+    language: Literal["en", "hi", "kn"] = "en",
+    radius_km: float = Query(default=10, gt=0, le=100),
+    city: Optional[str] = Query(default=None, max_length=120),
+    district: Optional[str] = Query(default=None, max_length=120),
+    state: Optional[str] = Query(default=None, max_length=120),
+):
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    verified_facilities = get_all_facilities(
+        verification_status="verified",
+        limit=1000,
+    )
+    nearby_verified_facilities = []
+    for facility in verified_facilities:
+        distance = haversine_km(
+            latitude,
+            longitude,
+            float(facility["latitude"]),
+            float(facility["longitude"]),
+        )
+        if distance <= radius_km:
+            nearby_verified_facilities.append({
+                **facility,
+                "distance_km": round(distance, 2),
+            })
+    nearby_verified_facilities.sort(key=lambda item: item["distance_km"])
+
+    local_alerts = []
+    unverified_alerts = []
+    for alert in get_active_alerts(200):
+        match = match_alert_location(
+            alert,
+            latitude,
+            longitude,
+            city=city,
+            district=district,
+            state=state,
+        )
+        if match["matched"] is True:
+            local_alerts.append({
+                **alert,
+                "location_match": match,
+            })
+        elif match["matched"] is None:
+            unverified_alerts.append({
+                "alert_id": alert["alert_id"],
+                "title": alert["title"],
+                "event": alert.get("event"),
+                "severity": alert.get("severity"),
+                "expires_at": alert.get("expires_at"),
+                "source_url": alert.get("source_url"),
+                "area_description": alert.get("area_description"),
+                "location_match": match,
+                "warning": "The alert may be relevant, but its geographic relation is unconfirmed.",
+            })
+
+    guidance_catalog = {
+        category: {
+            "instructions": instructions,
+            "recommended_facility_types": FACILITY_SUGGESTIONS.get(category, []),
+        }
+        for category, instructions in GUIDANCE[language].items()
+    }
+
+    return {
+        "package_type": "resqlink_offline_emergency_package",
+        "schema_version": 1,
+        "generated_at": generated_at,
+        "language": language,
+        "location": {
+            "latitude": latitude,
+            "longitude": longitude,
+            "city": city,
+            "district": district,
+            "state": state,
+            "radius_km": radius_km,
+        },
+        "emergency_contact": EMERGENCY_CONTACT_INDIA,
+        "guidance_catalog": guidance_catalog,
+        "nearby_verified_facilities": nearby_verified_facilities,
+        "location_matched_official_alerts": local_alerts,
+        "unverified_location_alerts": unverified_alerts,
+        "offline_capabilities": {
+            "multilingual_safety_guides": True,
+            "emergency_contact_number": True,
+            "verified_facility_directory": True,
+            "downloaded_official_alert_snapshot": True,
+            "map_tiles_included": False,
+            "live_alert_updates": False,
+            "live_weather_updates": False,
+            "live_traffic_updates": False,
+        },
+        "refresh_recommended_after_seconds": 900,
+        "important": [
+            "This is a snapshot generated at the stated time; new alerts cannot arrive while offline.",
+            "Check each alert's own expiry and status; the package has no guaranteed validity period.",
+            "Only facilities marked verified are included. Verification depends on the source and note recorded by the project administrator.",
+            "Map tiles, live routing, weather and traffic are not bundled.",
+            "Never treat absence of an alert or facility as proof that an area is safe.",
+        ],
+    }
 
 
 @app.get("/weather/nearby")

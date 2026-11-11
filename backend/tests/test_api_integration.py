@@ -250,6 +250,62 @@ class ResQLinkApiTests(unittest.TestCase):
             finally:
                 database_connection.DATABASE_PATH = original_path
 
+    def test_offline_package_includes_localized_guidance_and_only_verified_facilities(self):
+        verified = self.client.post(
+            "/facilities",
+            json={
+                "name": "Verified Demo Hospital",
+                "facility_type": "hospital",
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+                "source_name": "Official directory test fixture",
+            },
+        )
+        verified_id = verified.json()["facility_id"]
+        self.client.post(
+            f"/facilities/{verified_id}/verification",
+            headers={"X-Admin-Token": "integration-test-admin-secret"},
+            json={
+                "verification_status": "verified",
+                "verification_note": "Test fixture only; official directory reviewed.",
+            },
+        )
+
+        self.client.post(
+            "/facilities",
+            json={
+                "name": "Unverified Demo Clinic",
+                "facility_type": "hospital",
+                "latitude": 12.9717,
+                "longitude": 77.5947,
+            },
+        )
+
+        response = self.client.get(
+            "/offline/package",
+            params={
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+                "language": "hi",
+                "radius_km": 2,
+                "city": "Test City",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        package = response.json()
+        self.assertEqual(package["package_type"], "resqlink_offline_emergency_package")
+        self.assertEqual(package["language"], "hi")
+        self.assertEqual(package["emergency_contact"]["number"], "112")
+        self.assertIn("fire", package["guidance_catalog"])
+        self.assertIn("instructions", package["guidance_catalog"]["fire"])
+        self.assertEqual(len(package["nearby_verified_facilities"]), 1)
+        self.assertEqual(
+            package["nearby_verified_facilities"][0]["verification_status"],
+            "verified",
+        )
+        self.assertFalse(package["offline_capabilities"]["map_tiles_included"])
+        self.assertFalse(package["offline_capabilities"]["live_alert_updates"])
+
     def test_location_save_and_last_known(self):
         saved = self.client.post(
             "/locations/resolve",
