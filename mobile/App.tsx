@@ -284,16 +284,20 @@ export default function App() {
       const fallback = getOfflineGuidance(submittedMessage, language, cached);
       const reason = error instanceof Error ? error.message : "Unable to reach the backend.";
       setBackendConnection("unreachable");
-      const offlineReply = (fallback.guidance ?? []).join("\n");
+      const offlineReply = fallback.reply ?? (fallback.guidance ?? []).join("\n");
       setResult({ ...fallback, reply: offlineReply, diagnostic_message: reason });
-      setChatHistory((current) => [
-        ...current,
-        { role: "user" as const, content: submittedMessage },
-        { role: "assistant" as const, content: offlineReply },
-      ].slice(-10));
+      if (fallback.in_scope) {
+        setChatHistory((current) => [
+          ...current,
+          { role: "user" as const, content: submittedMessage },
+          { role: "assistant" as const, content: offlineReply },
+        ].slice(-10));
+        setStatus("Offline keyword guidance · AI and live data unavailable");
+      } else {
+        setStatus("ResQLink only handles emergency-related assistance");
+      }
       setMessage("");
       setSelectedPrompt("");
-      setStatus("Offline keyword guidance · AI and live data unavailable");
     } finally {
       setBusy(false);
     }
