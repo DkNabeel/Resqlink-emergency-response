@@ -98,6 +98,10 @@ export default function App() {
   const [offlinePackage, setOfflinePackage] = useState<OfflinePackage | null>(null);
   const [result, setResult] = useState<EmergencyResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [permissionsReady, setPermissionsReady] = useState(false);
+  const [permissionBusy, setPermissionBusy] = useState(false);
+  const [permissionMessage, setPermissionMessage] = useState("ResQLink needs location and notification permissions to provide emergency assistance.");
+  const [backgroundMonitoringReady, setBackgroundMonitoringReady] = useState(false);
   const [status, setStatus] = useState("Ready to help");
   const [locationStatus, setLocationStatus] = useState("Location has not been requested");
   const [backendConnection, setBackendConnection] = useState<"checking" | "connected" | "unreachable">("checking");
@@ -108,6 +112,23 @@ export default function App() {
   const [weatherData, setWeatherData] = useState<WeatherSnapshot | null>(null);
 
   const copy = COPY[language];
+
+  async function enableRequiredPermissions() {
+    setPermissionBusy(true);
+    try {
+      const permissions = await startBackgroundMonitoring();
+      setPermissionMessage(permissions.message);
+      setBackgroundMonitoringReady(permissions.backgroundEnabled);
+      const ready = permissions.locationEnabled && permissions.notificationsEnabled;
+      setPermissionsReady(ready);
+      if (ready) setStatus(permissions.message);
+    } catch (error) {
+      setPermissionsReady(false);
+      setPermissionMessage(error instanceof Error ? error.message : "Please enable location and notification permissions in Settings.");
+    } finally {
+      setPermissionBusy(false);
+    }
+  }
 
   async function checkBackendConnection() {
     setBackendConnection("checking");
@@ -127,13 +148,7 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    startBackgroundMonitoring()
-      .then((result) => {
-        if (active) setStatus(result.message);
-      })
-      .catch(() => {
-        if (active) setStatus("Background monitoring could not be enabled. Foreground emergency assistance remains available.");
-      });
+    enableRequiredPermissions().catch(() => {});
     getLatestOfflinePackage()
       .then((cached) => {
         if (active && cached) setOfflinePackage(cached.payload);
@@ -341,6 +356,29 @@ export default function App() {
   const facilities: NearbyFacility[] = result?.nearby_facilities?.length
     ? result.nearby_facilities
     : packageFacilities;
+
+  if (!permissionsReady) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="dark-content" />
+        <View style={styles.permissionGate}>
+          <View style={styles.logo}><Text style={styles.logoText}>R</Text></View>
+          <Text style={styles.permissionTitle}>Enable ResQLink protection</Text>
+          <Text style={styles.permissionBody}>
+            ResQLink needs location to identify nearby government alerts and emergency facilities, and notifications to warn you about relevant disasters.
+          </Text>
+          <Text style={styles.permissionMessage}>{permissionMessage}</Text>
+          <Pressable onPress={enableRequiredPermissions} disabled={permissionBusy} style={styles.permissionButton}>
+            {permissionBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.permissionButtonText}>Allow required permissions</Text>}
+          </Pressable>
+          <Pressable onPress={() => Linking.openSettings()} style={styles.permissionSettings}>
+            <Text style={styles.permissionSettingsText}>Open phone Settings</Text>
+          </Pressable>
+          <Text style={styles.permissionFootnote}>Background location refresh is best-effort and requires a compatible native app build. Foreground emergency assistance requires location and notifications.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -574,6 +612,7 @@ export default function App() {
 
         <View style={styles.footer}>
           <Text style={styles.footerStatus}>{status}</Text>
+          {permissionsReady && !backgroundMonitoringReady ? <Text style={styles.offlineWarning}>Background alerts and automatic cache refresh are not active on this device build.</Text> : null}
           <Text style={styles.footerApi}>
             {backendConnection === "connected"
               ? "● Backend reachable" + (backendAiConfigured ? " · Groq key configured" : " · Groq key missing")
@@ -623,6 +662,15 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F5F7FA" },
+  permissionGate: { flex: 1, justifyContent: "center", alignItems: "center", padding: 28, gap: 16 },
+  permissionTitle: { color: "#173849", fontSize: 24, fontWeight: "900", textAlign: "center" },
+  permissionBody: { color: "#617686", fontSize: 13, lineHeight: 20, textAlign: "center" },
+  permissionMessage: { color: "#9A6720", backgroundColor: "#FFF6E6", borderRadius: 10, padding: 12, fontSize: 11, lineHeight: 17, textAlign: "center" },
+  permissionButton: { backgroundColor: "#147A6A", borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, minWidth: "100%", alignItems: "center" },
+  permissionButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
+  permissionSettings: { padding: 10 },
+  permissionSettingsText: { color: "#14715F", fontSize: 12, fontWeight: "800" },
+  permissionFootnote: { color: "#8A98A6", fontSize: 10, lineHeight: 15, textAlign: "center" },
   container: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 44, gap: 17 },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
