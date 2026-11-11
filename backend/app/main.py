@@ -23,6 +23,7 @@ from app.database.alert_repository import (
 from app.database.facility_repository import get_all_facilities
 from app.database.init_db import create_tables
 from app.database.location_repository import get_last_location, save_location
+from app.services.emergency_service import build_emergency_response
 from app.services.geospatial_service import haversine_km, match_alert_location
 from app.services.location_service import estimate_location_from_ip
 from app.services.sachet_service import DEFAULT_SACHET_FEED, sync_sachet_feed
@@ -83,6 +84,13 @@ app = FastAPI(
 
 class EmergencyRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+    language: Literal["en", "hi", "kn"] = "en"
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    radius_km: float = Field(default=10, gt=0, le=200)
+    city: Optional[str] = Field(default=None, max_length=120)
+    district: Optional[str] = Field(default=None, max_length=120)
+    state: Optional[str] = Field(default=None, max_length=120)
 
 
 class LocationResolveRequest(BaseModel):
@@ -138,12 +146,65 @@ def health():
 
 @app.post("/emergency")
 def receive_emergency(request: EmergencyRequest):
-    # Gemini remains separate until its live API response is verified.
-    # This endpoint does not claim that AI guidance was generated.
+    has_latitude = request.latitude is not None
+    has_longitude = request.longitude is not None
+    if has_latitude != has_longitude:
+        raise HTTPException(
+            status_code=422,
+            detail="Send both latitude and longitude, or send neither.",
+        )
+
+    result = build_emergency_response(request.message.strip(), request.language)
+    nearby_facilities = []
+    nearby_alerts = []
+    unverified_alerts = []
+
+    if has_latitude and has_longitude:
+        for facility in get_all_facilities():
+            distance = haversine_km(
+                request.latitude,
+                request.longitude,
+                float(facility["latitude"]),
+                float(facility["longitude"]),
+            )
+            if distance <= request.radius_km:
+                nearby_facilities.append({**facility, "distance_km": round(distance, 2)})
+        nearby_facilities.sort(key=lambda item: item["distance_km"])
+
+        for alert in get_active_alerts(200):
+            match = match_alert_location(
+                alert, request.latitude, request.longitude,
+                city=request.city, district=request.district, state=request.state,
+            )
+            if match["matched"] is True:
+                nearby_alerts.append({**alert, "location_match": match})
+            elif match["matched"] is None:
+                unverified_alerts.append({
+                    "alert_id": alert["alert_id"],
+                    "title": alert["title"],
+                    "area_description": alert.get("area_description"),
+                    "location_match": match,
+                    "warning": "Location relation is unverified; inspect the original official alert.",
+                })
+
     return {
-        "status": "received",
+        "status": "processed",
         "message": request.message.strip(),
-        "ai_status": "not_connected_yet",
+        **result,
+        "analysis_engine": "local_multilingual_nlp_fallback",
+        "gemini_status": "not_connected",
+        "location_used": (
+            {"latitude": request.latitude, "longitude": request.longitude, "radius_km": request.radius_km}
+            if has_latitude else None
+        ),
+        "nearby_facilities": nearby_facilities,
+        "nearby_alerts": nearby_alerts,
+        "unverified_alerts": unverified_alerts,
+        "data_limitations": [
+            "SACHET polygon endpoint currently returns HTTP 403 in this environment.",
+            "District/locality text matching is not polygon-verified.",
+            "An empty facility list may mean no facilities have been entered in the database.",
+        ],
     }
 
 
