@@ -208,7 +208,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F5F7FA" />
+      <StatusBar barStyle="dark-content" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.topBar}>
           <View style={styles.brandRow}>
@@ -328,7 +328,7 @@ export default function App() {
               </View>
             ))}
             <Text style={styles.safetyNotice}>{result.safety_notice ?? "Follow official emergency responder instructions."}</Text>
-            {result.nearby_facilities?.length ? <Text style={styles.sourceText}>Nearby verified facilities: {result.nearby_facilities.length}</Text> : null}
+            {Array.isArray(result.nearby_facilities) && result.nearby_facilities.length > 0 ? <Text style={styles.sourceText}>Nearby verified facilities: {result.nearby_facilities.length}</Text> : null}
             {result.weather_context && typeof result.weather_context === "object" ? <Text style={styles.sourceText}>Weather context: {String((result.weather_context as { status?: string }).status ?? "available")}</Text> : null}
           </View>
         ) : null}
