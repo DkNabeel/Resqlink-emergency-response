@@ -28,7 +28,7 @@ SAMPLE_FEED = b"""<?xml version="1.0" encoding="UTF-8"?>
 </rss>
 """
 
-SAMPLE_CAP = b"""<?xml version="1.0" encoding="UTF-8"?>
+SAMPLE_CAP = """<?xml version="1.0" encoding="UTF-8"?>
 <cap:alert xmlns:cap="urn:oasis:names:tc:emergency:cap:1.2">
   <cap:identifier>IN-sample001_17</cap:identifier>
   <cap:sender>West-Bengal-SDMA</cap:sender>
@@ -69,7 +69,7 @@ SAMPLE_CAP = b"""<?xml version="1.0" encoding="UTF-8"?>
     </cap:area>
   </cap:info>
 </cap:alert>
-"""
+""".encode("utf-8")
 
 SAMPLE_POLYGON = b"""<PolygonData>
   <Polygon>12.0,77.0 12.0,78.0 13.0,78.0 13.0,77.0</Polygon>
