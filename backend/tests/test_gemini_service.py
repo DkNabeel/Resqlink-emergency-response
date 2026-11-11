@@ -71,6 +71,11 @@ class GeminiClassificationTests(unittest.TestCase):
         self.assertEqual(result["status"], "connected")
         self.assertEqual(result["emergency_type"], "gas_leak")
         client.models.generate_content.assert_called_once()
+        request_config = client.models.generate_content.call_args.kwargs["config"]
+        self.assertEqual(request_config.response_mime_type, "application/json")
+        self.assertEqual(request_config.max_output_tokens, 300)
+        # Gemini 3.8 guidance says to keep sampling parameters at defaults.
+        self.assertIsNone(request_config.temperature)
         client.close.assert_called_once()
 
 
