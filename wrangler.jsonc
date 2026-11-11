@@ -1,47 +1,17 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "resqlink-cloudflare-demo",
-  "main": "src/index.js",
+  "name": "resqlink-emergency-api",
+  "main": "backend/worker.py",
   "compatibility_date": "2026-11-11",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": true,
   "observability": {
     "enabled": true
-  },
-  "workers_dev": true,
-  "containers": [
-    {
-      "class_name": "ResQLinkBackend",
-      "scheduling_policy": "durable_object",
-      "images": {
-        "base": {
-          "dockerfile": "./Dockerfile"
-        }
-      }
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "RESQLINK_BACKEND",
-        "class_name": "ResQLinkBackend"
-      }
-    ]
-  },
-  "exports": {
-    "ResQLinkBackend": {
-      "type": "durable-object",
-      "storage": "sqlite"
-    }
   },
   "vars": {
     "AI_ENABLED": "true",
     "GROQ_MODEL": "qwen/qwen3.8-27b",
     "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b",
-    "GROQ_REQUEST_TIMEOUT_SECONDS": "14",
-    "AI_TOTAL_TIMEOUT_SECONDS": "30",
-    "SACHET_FEED_URL": "https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml",
-    "SACHET_SYNC_ENABLED": "true",
-    "SACHET_REFRESH_SECONDS": "300",
-    "IP_GEOLOCATION_ENABLED": "false",
     "WEATHER_CACHE_TTL_SECONDS": "600",
     "LOG_LEVEL": "INFO"
   }
