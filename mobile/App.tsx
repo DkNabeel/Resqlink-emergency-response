@@ -14,6 +14,7 @@ import {
 import * as Location from "expo-location";
 import {
   getOfflineGuidance,
+  getSystemStatus,
   isApiConfigured,
   sendEmergency,
   downloadOfflinePackage,
@@ -89,20 +90,41 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Ready to help");
   const [locationStatus, setLocationStatus] = useState("Location has not been requested");
+  const [backendConnection, setBackendConnection] = useState<"checking" | "connected" | "unreachable">("checking");
+  const [backendAiConfigured, setBackendAiConfigured] = useState<boolean | null>(null);
 
   const copy = COPY[language];
+
+  async function checkBackendConnection() {
+    setBackendConnection("checking");
+    try {
+      const health = await getSystemStatus();
+      setBackendConnection(health.api?.status === "ok" ? "connected" : "unreachable");
+      setBackendAiConfigured(Boolean(health.providers?.ai?.api_key_configured));
+    } catch {
+      setBackendConnection("unreachable");
+      setBackendAiConfigured(null);
+    }
+  }
 
   useEffect(() => {
     let active = true;
     getLatestOfflinePackage()
       .then((cached) => {
-        if (active && cached) {
-          setOfflinePackage(cached.payload);
-          setStatus("Saved offline safety pack loaded");
-        }
+        if (active && cached) setOfflinePackage(cached.payload);
+      })
+      .catch(() => {});
+    getSystemStatus()
+      .then((health) => {
+        if (!active) return;
+        setBackendConnection(health.api?.status === "ok" ? "connected" : "unreachable");
+        setBackendAiConfigured(Boolean(health.providers?.ai?.api_key_configured));
       })
       .catch(() => {
-        if (active) setStatus("No offline pack saved yet");
+        if (active) {
+          setBackendConnection("unreachable");
+          setBackendAiConfigured(null);
+        }
       });
     return () => { active = false; };
   }, []);
@@ -178,10 +200,13 @@ export default function App() {
       });
       setResult(response);
       setStatus("Emergency analysis completed");
-    } catch {
+    } catch (error) {
       const cached = offlinePackage ?? await getLatestOfflinePackage().then((x) => x?.payload ?? null).catch(() => null);
-      setResult(getOfflineGuidance(message, language, cached));
-      setStatus("Backend unavailable · showing offline guidance. Call 112 for urgent help.");
+      const fallback = getOfflineGuidance(message, language, cached);
+      const reason = error instanceof Error ? error.message : "Unable to reach the backend.";
+      setBackendConnection("unreachable");
+      setResult({ ...fallback, diagnostic_message: reason });
+      setStatus("Backend unreachable · showing on-device guidance. Check Wi-Fi and mobile/.env.");
     } finally {
       setBusy(false);
     }
@@ -203,7 +228,9 @@ export default function App() {
   const aiConnected = result?.ai_status === "connected" || result?.gemini_status === "connected";
   const aiLabel = aiConnected
     ? (ai?.provider ?? "Groq AI") + (ai?.model ? " · " + ai.model : "")
-    : result?.status === "offline_guidance_only" ? "On-device offline guidance" : "Local multilingual NLP";
+    : result?.status === "offline_guidance_only" ? "On-device offline guidance" : "Server-side local NLP fallback";
+  const aiError = typeof ai?.message === "string" ? ai.message : "";
+  const networkError = typeof result?.diagnostic_message === "string" ? result.diagnostic_message : "";
   const emergencyType = String(result?.emergency_type ?? "unknown").replaceAll("_", " ");
 
   return (
@@ -218,7 +245,10 @@ export default function App() {
               <Text style={styles.brandSub}>EMERGENCY RESPONSE</Text>
             </View>
           </View>
-          <View style={styles.readyPill}><View style={styles.readyDot} /><Text style={styles.readyText}>READY</Text></View>
+          <Pressable onPress={checkBackendConnection} style={styles.readyPill}>
+            <View style={[styles.readyDot, backendConnection === "unreachable" ? styles.connectionBad : backendConnection === "checking" ? styles.connectionChecking : null]} />
+            <Text style={styles.readyText}>{backendConnection === "connected" ? "API ONLINE" : backendConnection === "checking" ? "CHECKING" : "API OFFLINE"}</Text>
+          </Pressable>
         </View>
 
         <View style={styles.hero}>
@@ -319,6 +349,11 @@ export default function App() {
             </View>
             <Text style={styles.sourceText}>{aiLabel}</Text>
             {ai?.short_summary ? <Text style={styles.summary}>{ai.short_summary}</Text> : null}
+            {networkError ? <Text style={styles.diagnosticWarning}>Backend connection failed: {networkError}</Text> : null}
+            {aiError && !aiConnected ? <Text style={styles.diagnosticWarning}>Groq AI unavailable: {aiError}</Text> : null}
+            {!aiConnected && !aiError && !networkError && backendConnection === "connected" && backendAiConfigured === false
+              ? <Text style={styles.diagnosticWarning}>The backend is reachable, but GROQ_API_KEY is not configured on the server.</Text>
+              : null}
             <View style={styles.resultDivider} />
             <Text style={styles.guidanceTitle}>Immediate safety guidance</Text>
             {instructions.map((instruction, index) => (
@@ -351,7 +386,18 @@ export default function App() {
 
         <View style={styles.footer}>
           <Text style={styles.footerStatus}>{status}</Text>
-          <Text style={styles.footerApi}>{isApiConfigured() ? "● Backend configured" : "○ Configure mobile/.env API address"}</Text>
+          <Text style={styles.footerApi}>
+            {backendConnection === "connected"
+              ? "● Backend reachable" + (backendAiConfigured ? " · Groq key configured" : " · Groq key missing")
+              : backendConnection === "checking"
+                ? "◌ Checking backend connection..."
+                : isApiConfigured()
+                  ? "○ Backend unreachable · check laptop IP, Wi-Fi and firewall"
+                  : "○ Configure mobile/.env API address"}
+          </Text>
+          <Pressable onPress={checkBackendConnection} style={styles.recheckButton}>
+            <Text style={styles.recheckText}>Test backend connection again</Text>
+          </Pressable>
           <Text style={styles.disclaimer}>ResQLink is a prototype. It does not replace 112, government alerts or professional emergency responders.</Text>
         </View>
       </ScrollView>
@@ -451,6 +497,11 @@ const styles = StyleSheet.create({
   offlineWarning: { color: "#8A7450", fontSize: 9, lineHeight: 14 },
   footer: { paddingTop: 3, gap: 5, alignItems: "center" },
   footerStatus: { color: "#496273", fontSize: 11, fontWeight: "800" },
-  footerApi: { color: "#16816D", fontSize: 9, fontWeight: "800" },
+  footerApi: { color: "#16816D", fontSize: 9, fontWeight: "800", textAlign: "center" },
+  recheckButton: { paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "#E8F4F1", borderRadius: 8 },
+  recheckText: { color: "#14715F", fontSize: 10, fontWeight: "800" },
+  diagnosticWarning: { color: "#9B3E2D", backgroundColor: "#FFF0EB", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
+  connectionBad: { backgroundColor: "#C24135" },
+  connectionChecking: { backgroundColor: "#D69E2E" },
   disclaimer: { color: "#9AA5AE", fontSize: 9, textAlign: "center", lineHeight: 14 },
 });
