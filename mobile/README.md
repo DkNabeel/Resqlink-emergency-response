@@ -69,3 +69,7 @@ A new native build is required after changing location, notification or map nati
 - The SACHET polygon endpoint has returned HTTP 403 in the current environment. Alerts without confirmed geographic matching must remain visibly unverified.
 - Weather is contextual information, not an official disaster warning.
 - No absence of alerts or facilities proves an area is safe. Call 112 in India and follow official responder instructions.
+
+## Native Android map configuration
+
+Expo Go includes the React Native Maps module for foreground testing. A standalone Android development or release build needs a Google Maps Android API key configured in the native Expo config before building. Do not commit the key to a public repository; use an appropriate local environment or build secret. Background location also requires a native development build and OS permission approval.
