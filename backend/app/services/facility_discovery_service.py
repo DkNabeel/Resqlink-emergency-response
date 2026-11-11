@@ -119,10 +119,7 @@ out center tags;
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(22.0, connect=5.0),
-                headers={
-                    "User-Agent": "ResQLink-EmergencyResponse/1.0",
-                    "Accept-Encoding": "identity",
-                },
+                headers={"User-Agent": "ResQLink-EmergencyResponse/1.0"},
             ) as client:
                 response = await client.post(OVERPASS_URL, data={"data": query})
                 response.raise_for_status()

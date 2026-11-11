@@ -223,5 +223,3 @@ __marimo__/
 .venv/
 __pycache__/
 *.db
-# Cloudflare generated local state
-.wrangler/
