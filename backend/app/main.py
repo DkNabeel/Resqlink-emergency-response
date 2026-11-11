@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import secrets
@@ -8,7 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 # Load backend/.env here as well as in individual services. FastAPI does not
@@ -254,7 +256,8 @@ async def receive_emergency(request: EmergencyRequest):
 
     if has_latitude and has_longitude:
         suggested_types = set(result.get("recommended_facility_types", []))
-        for facility in get_all_facilities():
+        # Emergency results must never promote unverified facility records.
+        for facility in get_all_facilities(verification_status="verified"):
             if facility["facility_type"] not in suggested_types:
                 continue
             distance = haversine_km(
@@ -514,8 +517,47 @@ def last_known_location(device_id: str):
     )
 
 
+def _offline_package_etag(package):
+    """Hash stable package content while ignoring generation/check timestamps."""
+    stable_payload = {
+        key: value for key, value in package.items()
+        if key != "generated_at"
+    }
+    # A collector refresh can update last_seen_at without changing the alert
+    # information a mobile client actually needs.
+    for group_name in (
+        "location_matched_official_alerts",
+        "unverified_location_alerts",
+    ):
+        stable_payload[group_name] = [
+            {key: value for key, value in item.items() if key != "last_seen_at"}
+            for item in stable_payload.get(group_name, [])
+        ]
+    canonical = json.dumps(
+        stable_payload,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f'"{digest}"'
+
+
+def _etag_matches(if_none_match, current_etag):
+    if not if_none_match:
+        return False
+    for candidate in if_none_match.split(","):
+        token = candidate.strip()
+        if token == "*" or token == current_etag:
+            return True
+        if token.startswith("W/") and token[2:] == current_etag:
+            return True
+    return False
+
+
 @app.get("/offline/package")
 def create_offline_package(
+    response: Response,
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
     language: Literal["en", "hi", "kn"] = "en",
@@ -523,6 +565,7 @@ def create_offline_package(
     city: Optional[str] = Query(default=None, max_length=120),
     district: Optional[str] = Query(default=None, max_length=120),
     state: Optional[str] = Query(default=None, max_length=120),
+    if_none_match: Optional[str] = Header(default=None, alias="If-None-Match"),
 ):
     generated_at = datetime.now(timezone.utc).isoformat()
 
@@ -582,7 +625,7 @@ def create_offline_package(
         for category, instructions in GUIDANCE[language].items()
     }
 
-    return {
+    package = {
         "package_type": "resqlink_offline_emergency_package",
         "schema_version": 1,
         "generated_at": generated_at,
@@ -619,6 +662,19 @@ def create_offline_package(
             "Never treat absence of an alert or facility as proof that an area is safe.",
         ],
     }
+
+    etag = _offline_package_etag(package)
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = "private, no-cache"
+    response.headers["X-Package-Checked-At"] = generated_at
+
+    # Allow a mobile client to avoid downloading an unchanged package over a
+    # weak connection. Generation timestamps are deliberately excluded from
+    # the content hash so identical data can return 304 Not Modified.
+    if _etag_matches(if_none_match, etag):
+        return Response(status_code=304, headers=dict(response.headers))
+
+    return package
 
 
 @app.get("/weather/nearby")

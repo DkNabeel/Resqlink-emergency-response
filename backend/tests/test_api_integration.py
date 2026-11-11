@@ -226,25 +226,47 @@ class ResQLinkApiTests(unittest.TestCase):
         )
         self.assertEqual(facility.status_code, 422)
 
-    def test_emergency_returns_only_relevant_facility_types(self):
-        self.client.post(
+    def test_emergency_returns_only_verified_relevant_facility_types(self):
+        hospital = self.client.post(
             "/facilities",
             json={
-                "name": "Demo Hospital",
+                "name": "Demo Verified Hospital",
                 "facility_type": "hospital",
                 "latitude": 12.9716,
                 "longitude": 77.5946,
             },
         )
+        hospital_id = hospital.json()["facility_id"]
+        self.client.post(
+            f"/facilities/{hospital_id}/verification",
+            headers={"X-Admin-Token": "integration-test-admin-secret"},
+            json={
+                "verification_status": "verified",
+                "verification_note": "Test fixture checked against an official directory.",
+            },
+        )
+
+        # An unverified hospital is nearby but must not be returned to a person
+        # seeking emergency assistance.
         self.client.post(
             "/facilities",
             json={
-                "name": "Demo Fire Station",
+                "name": "Unverified Demo Hospital",
+                "facility_type": "hospital",
+                "latitude": 12.97161,
+                "longitude": 77.59461,
+            },
+        )
+        self.client.post(
+            "/facilities",
+            json={
+                "name": "Unverified Demo Fire Station",
                 "facility_type": "fire_station",
                 "latitude": 12.9717,
                 "longitude": 77.5947,
             },
         )
+
         response = self.client.post(
             "/emergency",
             json={
@@ -256,8 +278,11 @@ class ResQLinkApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-        returned_types = {item["facility_type"] for item in response.json()["nearby_facilities"]}
-        self.assertEqual(returned_types, {"hospital"})
+        nearby = response.json()["nearby_facilities"]
+        self.assertEqual(len(nearby), 1)
+        self.assertEqual(nearby[0]["facility_type"], "hospital")
+        self.assertEqual(nearby[0]["verification_status"], "verified")
+        self.assertEqual(nearby[0]["name"], "Demo Verified Hospital")
 
     def test_legacy_facility_database_migration_preserves_records(self):
         original_path = database_connection.DATABASE_PATH
@@ -355,6 +380,63 @@ class ResQLinkApiTests(unittest.TestCase):
         )
         self.assertFalse(package["offline_capabilities"]["map_tiles_included"])
         self.assertFalse(package["offline_capabilities"]["live_alert_updates"])
+
+    def test_offline_package_supports_etag_and_only_changes_when_payload_changes(self):
+        params = {
+            "latitude": 12.9716,
+            "longitude": 77.5946,
+            "language": "en",
+            "radius_km": 3,
+        }
+        first = self.client.get("/offline/package", params=params)
+        self.assertEqual(first.status_code, 200)
+        initial_etag = first.headers.get("ETag")
+        self.assertTrue(initial_etag)
+
+        unchanged = self.client.get(
+            "/offline/package",
+            params=params,
+            headers={"If-None-Match": initial_etag},
+        )
+        self.assertEqual(unchanged.status_code, 304)
+        self.assertEqual(unchanged.headers.get("ETag"), initial_etag)
+        self.assertTrue(unchanged.headers.get("X-Package-Checked-At"))
+
+        # Unverified places are excluded from the package, so adding one does
+        # not force a mobile client to download an unchanged emergency bundle.
+        created = self.client.post(
+            "/facilities",
+            json={
+                "name": "Unverified Cache Test Hospital",
+                "facility_type": "hospital",
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+            },
+        )
+        facility_id = created.json()["facility_id"]
+        still_unchanged = self.client.get(
+            "/offline/package",
+            params=params,
+            headers={"If-None-Match": initial_etag},
+        )
+        self.assertEqual(still_unchanged.status_code, 304)
+
+        self.client.post(
+            f"/facilities/{facility_id}/verification",
+            headers={"X-Admin-Token": "integration-test-admin-secret"},
+            json={
+                "verification_status": "verified",
+                "verification_note": "Test fixture verified from a test source.",
+            },
+        )
+        changed = self.client.get(
+            "/offline/package",
+            params=params,
+            headers={"If-None-Match": initial_etag},
+        )
+        self.assertEqual(changed.status_code, 200)
+        self.assertNotEqual(changed.headers.get("ETag"), initial_etag)
+        self.assertEqual(len(changed.json()["nearby_verified_facilities"]), 1)
 
     def test_location_save_and_last_known(self):
         saved = self.client.post(

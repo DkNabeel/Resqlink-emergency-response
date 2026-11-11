@@ -42,7 +42,7 @@ API documentation: http://127.0.0.1:8000/docs
 | POST | /facilities/{facility_id}/verification | Verify/unverify a facility with admin token |
 | GET | /facilities/nearby | Search facilities by straight-line distance |
 | GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |
-| GET | /offline/package | Download language-specific guides, 112, nearby verified facilities and location-matched alert snapshot for mobile caching |
+| GET | /offline/package | Download language-specific guides, 112, nearby verified facilities and location-matched alert snapshot; supports ETag/304 conditional refresh |
 
 ## Emergency request example
 
@@ -107,7 +107,7 @@ The backend retrieves RSS and linked CAP detail documents and stores sender, eve
 - GPS coordinates are provided by a future mobile client; this backend does not request a phone's GPS permission.
 - IP geolocation is approximate and disabled by default.
 - A saved GPS position may become stale and must be checked using its recorded timestamp.
-- Offline mobile maps and cached emergency packages must be implemented on the device. The backend cannot retrieve live government feeds when the phone has no network.
+- `/offline/package` returns a location-scoped data snapshot and supports `ETag` / `If-None-Match` so a mobile client can skip downloading an unchanged package. The mobile app must store and use the last successful response locally; the backend cannot retrieve live government feeds when the phone has no network. A `304 Not Modified` response means the client should retain its previously saved package.
 - Traffic data and route-time calculations are not integrated.
 - Push notification delivery is not guaranteed and must not replace official warning channels.
 
