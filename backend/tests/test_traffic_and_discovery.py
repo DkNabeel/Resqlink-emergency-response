@@ -18,6 +18,41 @@ class TrafficTests(unittest.TestCase):
         self.assertEqual(result["estimated_traffic_delay_minutes"], 3)
         self.assertEqual(result["distance_km"], 12.5)
 
+    def test_traffic_route_sends_departure_time_now(self):
+        import asyncio
+        import os
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.services.traffic_service import get_traffic_route
+
+        response = MagicMock()
+        response.json.return_value = {
+            "routes": [{
+                "duration": "600s",
+                "staticDuration": "540s",
+                "distanceMeters": 5000,
+                "polyline": {"encodedPolyline": "xyz"},
+            }]
+        }
+        response.raise_for_status = MagicMock()
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                return None
+            async def post(self, url, json, headers):
+                self.url, self.body, self.headers = url, json, headers
+                return response
+
+        fake = FakeClient()
+        with patch.dict(os.environ, {"GOOGLE_MAPS_ROUTES_API_KEY": "test-key"}):
+            with patch("app.services.traffic_service.httpx.AsyncClient", return_value=fake):
+                result = asyncio.run(get_traffic_route(12.9, 77.5, 12.91, 77.51))
+
+        self.assertEqual(fake.body["routingPreference"], "TRAFFIC_AWARE")
+        self.assertEqual(fake.body["departureTime"], "now")
+        self.assertEqual(result["traffic_aware_eta_minutes"], 10)
+
     def test_empty_route_response_is_rejected(self):
         with self.assertRaises(TrafficServiceError):
             normalize_route_response({"routes": []})

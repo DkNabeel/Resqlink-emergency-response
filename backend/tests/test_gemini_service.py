@@ -26,6 +26,33 @@ class GeminiClassificationTests(unittest.TestCase):
             with self.assertRaises(GeminiServiceError):
                 analyze_emergency_with_gemini("There is a fire")
 
+    def test_504_from_primary_tries_one_fallback_model(self):
+        response = MagicMock()
+        response.text = (
+            '{"emergency_type":"fire","confidence":"medium",'
+            '"short_summary":"Fire report","key_details":[]}'
+        )
+        client = MagicMock()
+        client.models.generate_content.side_effect = [
+            RuntimeError("504 DEADLINE_EXCEEDED"),
+            response,
+        ]
+        with patch.dict(os.environ, {
+            "GEMINI_API_KEY": "test-key",
+            "GEMINI_MODEL": "primary-model",
+            "GEMINI_FALLBACK_MODEL": "fallback-model",
+            "GEMINI_HTTP_TIMEOUT_MS": "5000",
+        }):
+            with patch("app.services.gemini_service.genai.Client", return_value=client):
+                result = analyze_emergency_with_gemini("Smoke reported", "en", "unknown")
+        self.assertEqual(result["status"], "connected")
+        self.assertEqual(result["model"], "fallback-model")
+        self.assertEqual(client.models.generate_content.call_count, 2)
+        self.assertEqual(
+            client.models.generate_content.call_args_list[1].kwargs["model"],
+            "fallback-model",
+        )
+
     def test_generate_content_returns_validated_result(self):
         response = MagicMock()
         response.text = (

@@ -82,7 +82,7 @@ def analyze_emergency_with_gemini(message, language="en", local_type="unknown"):
 
     primary = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
     fallback = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite").strip()
-    timeout_ms = max(3000, min(15000, int(os.getenv("GEMINI_HTTP_TIMEOUT_MS", "9000"))))
+    # Leave room for one model fallback inside the API route timeout.\n    timeout_ms = max(3000, min(8000, int(os.getenv("GEMINI_HTTP_TIMEOUT_MS", "5000"))))
     models = list(dict.fromkeys(model for model in (primary, fallback) if model))
     client = genai.Client(
         api_key=api_key,
@@ -113,8 +113,22 @@ def analyze_emergency_with_gemini(message, language="en", local_type="unknown"):
             except Exception as exc:
                 failures.append(f"{model}: {type(exc).__name__}")
                 detail = str(exc).lower()
-                model_missing = "404" in detail or "not found" in detail or "unknown model" in detail
-                if not (model_missing and index + 1 < len(models)):
+                error_name = type(exc).__name__.lower()
+                model_missing = (
+                    "404" in detail or "not found" in detail or "unknown model" in detail
+                )
+                transient_upstream = (
+                    any(code in detail for code in ("500", "502", "503", "504"))
+                    or "deadline_exceeded" in detail
+                    or "deadline exceeded" in detail
+                    or "timed out" in detail
+                    or "timeout" in detail
+                    or error_name in {"readtimeout", "connecttimeout", "timeoutexception"}
+                )
+                # Do not retry quota/auth failures (usually 401/403/429). A
+                # single fallback is useful for model availability and 5xx/
+                # deadline failures such as the previous 504 issue.
+                if not ((model_missing or transient_upstream) and index + 1 < len(models)):
                     break
     finally:
         try:
