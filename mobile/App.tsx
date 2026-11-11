@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -24,16 +24,26 @@ import {
   getNearbyWeather,
   getNearbyFacilities,
   cacheNearbyFacilities,
+  getDrivingRoute,
   downloadOfflinePackage,
   type EmergencyResult,
   type NearbyFacility,
   type OfflinePackage,
   type WeatherSnapshot,
+  type DrivingRouteEstimate,
 } from "./src/api";
 import { getLatestOfflinePackage } from "./src/cache";
 
 type Coordinates = { latitude: number; longitude: number };
 type Language = "en" | "hi" | "kn";
+type FacilityLookupStatus = "idle" | "loading" | "available" | "empty" | "error";
+type RouteSummary = {
+  facilityKey: string;
+  facilityName: string;
+  distanceKm: number;
+  etaMinutes: number;
+  note: string;
+};
 
 const LANGUAGES: { code: Language; label: string }[] = [
   { code: "en", label: "English" },
@@ -110,8 +120,43 @@ export default function App() {
   const [weatherVisible, setWeatherVisible] = useState(false);
   const [weatherBusy, setWeatherBusy] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherSnapshot | null>(null);
+  const [nearbyFacilities, setNearbyFacilities] = useState<NearbyFacility[]>([]);
+  const [facilityLookupStatus, setFacilityLookupStatus] = useState<FacilityLookupStatus>("idle");
+  const [facilityLookupError, setFacilityLookupError] = useState("");
+  const [routeEstimate, setRouteEstimate] = useState<RouteSummary | null>(null);
+  const [routeEstimateError, setRouteEstimateError] = useState("");
+  const [routeBusyFacility, setRouteBusyFacility] = useState<string | null>(null);
+  const facilityRequestSequence = useRef(0);
+  const currentGpsAvailable = useRef(false);
 
   const copy = COPY[language];
+
+  async function refreshNearbyFacilities(point: Coordinates) {
+    if (!isApiConfigured()) return;
+    const requestSequence = ++facilityRequestSequence.current;
+    setFacilityLookupStatus("loading");
+    setFacilityLookupError("");
+    try {
+      const found = await getNearbyFacilities(point, 10);
+      if (requestSequence !== facilityRequestSequence.current) return;
+      const items = Array.isArray(found.items) ? found.items : [];
+      setNearbyFacilities(items);
+      setFacilityLookupStatus(items.length > 0 ? "available" : "empty");
+      await cacheNearbyFacilities(items).catch(() => {});
+      setOfflinePackage((current) => current
+        ? { ...current, nearby_discovered_facilities: items, facility_discovery_status: "available" }
+        : current);
+      setStatus(items.length > 0
+        ? `Found ${items.length} nearby facility candidate(s)`
+        : "No mapped emergency facilities returned within 10 km");
+    } catch (error) {
+      if (requestSequence !== facilityRequestSequence.current) return;
+      const detail = error instanceof Error ? error.message : "Nearby facility lookup failed.";
+      setFacilityLookupError(detail);
+      setFacilityLookupStatus("error");
+      setStatus("Nearby facility search is temporarily unavailable");
+    }
+  }
 
   async function enableRequiredPermissions() {
     setPermissionBusy(true);
@@ -130,6 +175,7 @@ export default function App() {
             if (isApiConfigured()) {
               const downloaded = await downloadOfflinePackage(point, language);
               setOfflinePackage(downloaded.payload);
+              void refreshNearbyFacilities(point);
               setStatus("GPS ready · nearby emergency information saved for offline use");
             }
           } catch (error) {
@@ -166,9 +212,11 @@ export default function App() {
     enableRequiredPermissions().catch(() => {});
     getLastBackgroundLocation()
       .then((saved) => {
-        if (active && saved && !coordinates) {
-          setCoordinates({ latitude: saved.latitude, longitude: saved.longitude });
+        if (active && saved && !currentGpsAvailable.current) {
+          const savedPoint = { latitude: saved.latitude, longitude: saved.longitude };
+          setCoordinates(savedPoint);
           setLocationStatus("Using last saved GPS position · " + new Date(saved.recorded_at ?? Date.now()).toLocaleString());
+          void refreshNearbyFacilities(savedPoint);
         }
       })
       .catch(() => {});
@@ -201,7 +249,9 @@ export default function App() {
     }
     const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+    currentGpsAvailable.current = true;
     setCoordinates(point);
+    void refreshNearbyFacilities(point);
     try {
       const addresses = await Location.reverseGeocodeAsync(point);
       const address = addresses[0];
@@ -237,6 +287,7 @@ export default function App() {
       const point = coordinates ?? await obtainLocation();
       const response = await downloadOfflinePackage(point, language);
       setOfflinePackage(response.payload);
+      void refreshNearbyFacilities(point);
       setStatus(response.cacheStatus === "not_modified"
         ? "Offline pack is already up to date"
         : "Emergency safety pack saved to this device");
@@ -287,18 +338,8 @@ export default function App() {
       setResult(response);
       if (response.in_scope) {
         if (point) {
-          // Keep the urgent Groq reply fast; load OSM places separately.
-          void getNearbyFacilities(point, 10).then(async (found) => {
-            const candidates = found.items ?? [];
-            setResult((current) => {
-              if (!current || !current.in_scope) return current;
-              const existing = current.nearby_facilities ?? [];
-              const keys = new Set(existing.map((item) => [item.name, item.latitude, item.longitude].join("|")));
-              const additional = candidates.filter((item) => !keys.has([item.name, item.latitude, item.longitude].join("|")));
-              return { ...current, nearby_facilities: [...existing, ...additional] };
-            });
-            await cacheNearbyFacilities(candidates).catch(() => {});
-          }).catch(() => {});
+          // Facility discovery stays independent from the urgent Groq reply.
+          void refreshNearbyFacilities(point);
         }
         setChatHistory((current) => [
           ...current,
@@ -349,19 +390,59 @@ export default function App() {
     }
   }
 
+  function facilityKey(facility: NearbyFacility) {
+    return [
+      facility.name ?? "facility",
+      facility.latitude ?? "no-lat",
+      facility.longitude ?? "no-lon",
+    ].join("|");
+  }
+
   async function openFacilityRoute(facility: NearbyFacility) {
     if (typeof facility.latitude !== "number" || typeof facility.longitude !== "number") {
       setStatus("This facility has no usable map coordinates");
       return;
     }
-    const destination = facility.latitude + "," + facility.longitude;
-    const origin = coordinates ? "&origin=" + coordinates.latitude + "," + coordinates.longitude : "";
-    const url = "https://www.google.com/maps/dir/?api=1" + origin
-      + "&destination=" + destination + "&travelmode=driving";
+    const key = facilityKey(facility);
+    setRouteBusyFacility(key);
+    setRouteEstimateError("");
+    setRouteEstimate(null);
     try {
-      await Linking.openURL(url);
-    } catch {
-      setStatus("Unable to open the map app. Check your internet connection.");
+      const originPoint = coordinates ?? await obtainLocation();
+      const destinationPoint = {
+        latitude: facility.latitude,
+        longitude: facility.longitude,
+      };
+      const mapsUrl = "https://www.google.com/maps/dir/?api=1"
+        + "&origin=" + originPoint.latitude + "," + originPoint.longitude
+        + "&destination=" + destinationPoint.latitude + "," + destinationPoint.longitude
+        + "&travelmode=driving";
+
+      try {
+        const route: DrivingRouteEstimate = await getDrivingRoute(originPoint, destinationPoint);
+        setRouteEstimate({
+          facilityKey: key,
+          facilityName: facility.name ?? "Nearby facility",
+          distanceKm: route.distance_km,
+          etaMinutes: route.estimated_travel_time_minutes,
+          note: route.note,
+        });
+        setStatus("Road route estimate calculated");
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Road route estimate unavailable.";
+        setRouteEstimateError(detail);
+        setStatus("Route estimate unavailable · opening map directions instead");
+      }
+
+      try {
+        await Linking.openURL(mapsUrl);
+      } catch {
+        setStatus("Unable to open Google Maps directions. Check your internet connection.");
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "A current GPS location is required for route calculation.");
+    } finally {
+      setRouteBusyFacility(null);
     }
   }
 
@@ -402,9 +483,12 @@ export default function App() {
     ...(offlinePackage?.nearby_verified_facilities ?? []),
     ...(offlinePackage?.nearby_discovered_facilities ?? []),
   ];
-  const facilities: NearbyFacility[] = result?.nearby_facilities?.length
-    ? result.nearby_facilities
-    : packageFacilities;
+  const facilities: NearbyFacility[] =
+    facilityLookupStatus === "available" || facilityLookupStatus === "empty"
+      ? nearbyFacilities
+      : nearbyFacilities.length > 0
+        ? nearbyFacilities
+        : (result?.nearby_facilities?.length ? result.nearby_facilities : packageFacilities);
 
   if (!permissionsReady) {
     return (
@@ -618,32 +702,68 @@ export default function App() {
           </View>
         ) : null}
 
-        {facilities.length > 0 ? (
+        {coordinates ? (
           <View style={styles.facilityCard}>
             <Text style={styles.sectionTitle}>Nearby emergency facilities</Text>
-            <Text style={styles.facilityHint}>Verified records and community-mapped candidates are labelled separately.</Text>
-            {facilities.slice(0, 12).map((facility, index) => (
-              <View key={String(facility.name ?? "facility") + "-" + index} style={styles.facilityRow}>
-                <View style={styles.facilityCopy}>
-                  <Text style={styles.facilityName}>{facility.name ?? "Emergency facility"}</Text>
-                  <Text style={styles.facilityMeta}>
-                    {(facility.facility_type ?? "facility").replaceAll("_", " ")}
-                    {typeof facility.distance_km === "number" ? " · " + facility.distance_km.toFixed(1) + " km" : ""}
-                  </Text>
-                  <Text style={facility.verification_status === "verified" ? styles.verifiedText : styles.unverifiedText}>
-                    {facility.verification_status === "verified" ? "Verified project record" : "Unverified map candidate"}
-                  </Text>
-                </View>
-                {facility.phone ? (
-                  <Pressable onPress={() => callFacility(facility)} style={styles.callFacilityButton}>
-                    <Text style={styles.callFacilityText}>Call</Text>
-                  </Pressable>
-                ) : null}
-                <Pressable onPress={() => openFacilityRoute(facility)} style={styles.routeButton}>
-                  <Text style={styles.routeButtonText}>Route ↗</Text>
-                </Pressable>
+            <Text style={styles.facilityHint}>Searching a 10 km radius. Community-mapped candidates remain unverified.</Text>
+            {facilityLookupStatus === "loading" ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
+                <ActivityIndicator color="#147A6A" />
+                <Text style={styles.facilityMeta}>Finding nearby hospitals, shelters, fire and police services...</Text>
               </View>
-            ))}
+            ) : null}
+            {facilityLookupStatus === "error" ? (
+              <Text style={styles.diagnosticWarning}>
+                Live facility search failed: {facilityLookupError}
+                {facilities.length > 0 ? " Showing saved candidates where available." : " Please retry when the network is available."}
+              </Text>
+            ) : null}
+            {facilityLookupStatus === "empty" && facilities.length === 0 ? (
+              <Text style={styles.facilityHint}>No mapped emergency facilities were returned within 10 km. This does not mean no services exist nearby; use 112 for urgent help.</Text>
+            ) : null}
+            {facilityLookupStatus === "idle" && facilities.length === 0 ? (
+              <Text style={styles.facilityHint}>Nearby facility lookup will start when GPS is ready.</Text>
+            ) : null}
+            {facilities.slice(0, 12).map((facility, index) => {
+              const key = facilityKey(facility);
+              return (
+                <View key={key + "-" + index} style={styles.facilityRow}>
+                  <View style={styles.facilityCopy}>
+                    <Text style={styles.facilityName}>{facility.name ?? "Emergency facility"}</Text>
+                    <Text style={styles.facilityMeta}>
+                      {(facility.facility_type ?? "facility").replaceAll("_", " ")}
+                      {typeof facility.distance_km === "number" ? " · " + facility.distance_km.toFixed(1) + " km" : ""}
+                    </Text>
+                    <Text style={facility.verification_status === "verified" ? styles.verifiedText : styles.unverifiedText}>
+                      {facility.verification_status === "verified"
+                        ? "Verified project record"
+                        : facility.has_map_name === false
+                          ? "Inferred map label · unverified"
+                          : "Unverified map candidate"}
+                    </Text>
+                  </View>
+                  {facility.phone ? (
+                    <Pressable onPress={() => callFacility(facility)} style={styles.callFacilityButton}>
+                      <Text style={styles.callFacilityText}>Call</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable onPress={() => openFacilityRoute(facility)} disabled={routeBusyFacility === key} style={styles.routeButton}>
+                    <Text style={styles.routeButtonText}>{routeBusyFacility === key ? "Calculating..." : "Route ↗"}</Text>
+                  </Pressable>
+                </View>
+              );
+            })}
+            {routeEstimate ? (
+              <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: "#E5EBEF", marginTop: 6 }}>
+                <Text style={styles.facilityName}>🚗 Route estimate · {routeEstimate.facilityName}</Text>
+                <Text style={styles.facilityMeta}>{routeEstimate.distanceKm.toFixed(2)} km · about {routeEstimate.etaMinutes.toFixed(0)} min driving</Text>
+                <Text style={styles.facilityHint}>{routeEstimate.note} Not checked against live disaster hazards.</Text>
+              </View>
+            ) : null}
+            {routeEstimateError ? <Text style={styles.diagnosticWarning}>{routeEstimateError}</Text> : null}
+            <Pressable onPress={() => refreshNearbyFacilities(coordinates)} style={styles.recheckButton}>
+              <Text style={styles.recheckText}>Refresh nearby facilities</Text>
+            </Pressable>
           </View>
         ) : null}
 

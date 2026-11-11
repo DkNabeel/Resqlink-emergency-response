@@ -24,6 +24,19 @@ class EmergencyIntentTests(unittest.TestCase):
         self.assertEqual(result["emergency_type"], "unknown")
         self.assertTrue(result["guidance"])
 
+    def test_hand_cut_after_accident_is_recognized_as_medical(self):
+        result = build_emergency_response(
+            "My hand has been cut by accident help me", "en"
+        )
+        self.assertEqual(result["emergency_type"], "medical")
+        self.assertIn("hospital", result["recommended_facility_types"])
+        self.assertIn("pressure", " ".join(result["guidance"]).lower())
+
+    def test_cut_finger_in_kannada_is_recognized_as_medical(self):
+        result = detect_emergency("ನನ್ನ ಕೈಗೆ ಗಾಯವಾಗಿದೆ, ಬೆರಳು ಕತ್ತರಿಸಿದೆ")
+        self.assertEqual(result["emergency_type"], "medical")
+
+
     def test_gas_leak_detected(self):
         result = build_emergency_response("I smell a gas leak", "en")
         self.assertEqual(result["emergency_type"], "gas_leak")

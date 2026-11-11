@@ -75,6 +75,9 @@ class GroqClassificationTests(unittest.TestCase):
         self.assertIn("emergency-only assistant", payload["messages"][0]["content"])
         self.assertIn("3-5 numbered action lines", payload["messages"][0]["content"])
         self.assertIn("Do not make 'Call 112' the whole answer", payload["messages"][0]["content"])
+        self.assertIn("one relevant, calm emoji", payload["messages"][0]["content"])
+        self.assertIn("switch to that incident", payload["messages"][0]["content"])
+        self.assertIn("one specific, situation-based follow-up question", payload["messages"][0]["content"])
         self.assertEqual(payload["messages"][-2]["content"], "I smell smoke")
 
     def test_missing_key_fails_without_network(self):

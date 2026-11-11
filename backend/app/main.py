@@ -308,11 +308,22 @@ async def emergency_chat(request: EmergencyChatRequest):
         {"role": item.role, "content": item.content}
         for item in request.conversation_history
     ]
-    context_text = "\n".join(
-        [item["content"] for item in history[-8:]] + [request.message]
-    )
-    local_result = build_emergency_response(context_text, request.language)
+    # Classify the latest message first so a new incident (for example, a
+    # hand injury after an earthquake chat) does not inherit the previous type.
+    local_result = build_emergency_response(request.message, request.language)
     local_type = local_result.get("emergency_type", "unknown")
+    if local_type == "unknown" and history:
+        # Short follow-ups such as "it is still bleeding" can rely on recent
+        # conversation context when the latest message has no standalone intent.
+        follow_up_context = "\n".join(item["content"] for item in history[-4:] if item["role"] == "user")
+        if follow_up_context:
+            contextual_result = build_emergency_response(
+                follow_up_context + "\n" + request.message,
+                request.language,
+            )
+            if contextual_result.get("emergency_type") != "unknown":
+                local_result = contextual_result
+                local_type = contextual_result["emergency_type"]
     trusted_guidance = GUIDANCE[request.language].get(
         local_type, GUIDANCE[request.language]["unknown"]
     )

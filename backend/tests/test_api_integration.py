@@ -103,6 +103,39 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertIn("damaged structures", body["reply"])
         self.assertEqual(body["emergency_contact"]["number"], "112")
 
+    def test_new_hand_injury_does_not_inherit_previous_earthquake_context(self):
+        fake_chat = {
+            "status": "connected",
+            "provider": "Groq API",
+            "model": "qwen-test-model",
+            "in_scope": True,
+            "emergency_type": "medical",
+            "urgency": "urgent",
+            "reply": "🩸 1. Apply firm pressure to the cut.",
+            "follow_up_question": "Is the bleeding heavy, and can you move your fingers?",
+        }
+        with patch.dict(os.environ, {"GROQ_API_KEY": "integration-test-key", "AI_ENABLED": "true"}):
+            with patch("app.main.respond_to_emergency_chat", return_value=fake_chat) as groq:
+                response = self.client.post(
+                    "/emergency/chat",
+                    json={
+                        "message": "My hand has been cut by accident help me",
+                        "language": "en",
+                        "conversation_history": [
+                            {"role": "user", "content": "An earthquake is happening."},
+                            {"role": "assistant", "content": "Drop, cover and hold on."},
+                        ],
+                        "latitude": 12.9716,
+                        "longitude": 77.5946,
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["local_nlp_type"], "medical")
+        self.assertEqual(body["emergency_type"], "medical")
+        self.assertEqual(groq.call_args.args[3], "medical")
+
     def test_emergency_chat_does_not_wait_for_separate_facility_discovery(self):
         fake_chat = {
             "status": "connected",
