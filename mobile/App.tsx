@@ -514,7 +514,7 @@ export default function App() {
   if (!permissionsReady) {
     return (
       <SafeAreaView style={styles.safe}>
-        <StatusBar barStyle="light-content" backgroundColor="#030303" />
+        <StatusBar barStyle="light-content" />
         <View style={styles.permissionGate}>
           <View style={styles.logo}><Text style={styles.logoText}>R</Text></View>
           <Text style={styles.permissionTitle}>Enable ResQLink protection</Text>
@@ -536,7 +536,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#030303" />
+      <StatusBar barStyle="light-content" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.topBar}>
           <View style={styles.brandRow}>
