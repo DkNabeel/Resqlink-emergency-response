@@ -4,7 +4,7 @@ import * as SQLite from "expo-sqlite";
 import * as TaskManager from "expo-task-manager";
 
 const LOCATION_TASK = "RESQLINK_BACKGROUND_LOCATION";
-const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(/\\/+$/, "");
+const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "");
 const DB_NAME = "resqlink-mobile.db";
 const ALERT_CHANNEL = "resqlink-emergency-alerts";
 
