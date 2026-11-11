@@ -262,6 +262,8 @@ class ResQLinkApiTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["providers"]["gemini"]["integration"], "generate_content")
         self.assertEqual(body["providers"]["weather"]["provider"], "Open-Meteo")
+        self.assertEqual(body["providers"]["traffic"]["provider"], "Google Maps Routes API")
+        self.assertTrue(body["providers"]["facility_discovery"]["results_are_unverified"])
 
     def test_blank_inputs_are_rejected(self):
         emergency = self.client.post("/emergency", json={"message": "   "})
@@ -537,6 +539,69 @@ class ResQLinkApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["weather_context"]["status"], "live")
+
+    def test_traffic_route_endpoint_returns_normalized_provider_response(self):
+        from unittest.mock import AsyncMock, patch
+
+        fake_result = {
+            "provider": "Google Maps Routes API",
+            "traffic_aware_eta_seconds": 600,
+            "traffic_aware_eta_minutes": 10,
+            "distance_meters": 5000,
+            "distance_km": 5,
+            "routing_preference": "TRAFFIC_AWARE",
+        }
+        with patch("app.main.get_traffic_route", AsyncMock(return_value=fake_result)):
+            response = self.client.post(
+                "/routes/traffic",
+                json={
+                    "origin_latitude": 12.97,
+                    "origin_longitude": 77.59,
+                    "destination_latitude": 12.98,
+                    "destination_longitude": 77.60,
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["traffic_aware_eta_minutes"], 10)
+
+    def test_traffic_route_missing_key_returns_service_unavailable(self):
+        from unittest.mock import AsyncMock, patch
+        with patch(
+            "app.main.get_traffic_route",
+            AsyncMock(side_effect=TrafficNotConfigured("key missing")),
+        ):
+            response = self.client.post(
+                "/routes/traffic",
+                json={
+                    "origin_latitude": 12.97,
+                    "origin_longitude": 77.59,
+                    "destination_latitude": 12.98,
+                    "destination_longitude": 77.60,
+                },
+            )
+        self.assertEqual(response.status_code, 503)
+
+    def test_facility_discovery_returns_unverified_candidates(self):
+        from unittest.mock import AsyncMock, patch
+        with patch(
+            "app.main.discover_facilities",
+            AsyncMock(return_value={
+                "count": 1,
+                "items": [{
+                    "name": "Open Data Hospital",
+                    "facility_type": "hospital",
+                    "verification_status": "unverified",
+                }],
+                "source": "OpenStreetMap contributors",
+                "cache_status": "live",
+            }),
+        ):
+            response = self.client.get(
+                "/facilities/discover",
+                params={"latitude": 12.97, "longitude": 77.59, "radius_km": 5},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"][0]["verification_status"], "unverified")
 
     def test_weather_endpoint_can_return_provider_data(self):
         async def fake_weather(latitude, longitude, forecast_hours):

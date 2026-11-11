@@ -40,6 +40,8 @@ from app.services.emergency_service import (
 )
 from app.services.geospatial_service import haversine_km, match_alert_location
 from app.services.gemini_service import GeminiServiceError, analyze_emergency_with_gemini
+from app.services.traffic_service import TrafficNotConfigured, TrafficServiceError, get_traffic_route
+from app.services.facility_discovery_service import discover_facilities
 from app.services.location_service import estimate_location_from_ip
 from app.services.sachet_service import DEFAULT_SACHET_FEED, sync_sachet_feed
 from app.services.weather_service import WeatherServiceError, get_weather_snapshot
@@ -117,6 +119,13 @@ class EmergencyRequest(BaseModel):
     state: Optional[str] = Field(default=None, max_length=120)
     include_weather: bool = False
     weather_forecast_hours: int = Field(default=6, ge=1, le=24)
+
+
+class TrafficRouteRequest(BaseModel):
+    origin_latitude: float = Field(ge=-90, le=90)
+    origin_longitude: float = Field(ge=-180, le=180)
+    destination_latitude: float = Field(ge=-90, le=90)
+    destination_longitude: float = Field(ge=-180, le=180)
 
 
 class FacilityRequest(BaseModel):
@@ -222,6 +231,16 @@ def system_status():
                 "provider": "Open-Meteo",
                 "request_mode": "on-demand",
                 "api_key_required": False,
+            },
+            "traffic": {
+                "provider": "Google Maps Routes API",
+                "api_key_configured": bool(os.getenv("GOOGLE_MAPS_ROUTES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY")),
+                "traffic_aware_routes": True,
+            },
+            "facility_discovery": {
+                "provider": "OpenStreetMap Overpass API",
+                "api_key_required": False,
+                "results_are_unverified": True,
             },
             "gemini": {
                 "enabled": os.getenv("GEMINI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"},
@@ -732,6 +751,37 @@ def create_offline_package(
         return Response(status_code=304, headers=dict(response.headers))
 
     return package
+
+
+@app.post("/routes/traffic")
+async def traffic_route(payload: TrafficRouteRequest):
+    try:
+        return await get_traffic_route(
+            payload.origin_latitude,
+            payload.origin_longitude,
+            payload.destination_latitude,
+            payload.destination_longitude,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TrafficNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except TrafficServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/facilities/discover")
+async def discover_nearby_facilities(
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+    radius_km: float = Query(default=5, ge=1, le=20),
+):
+    try:
+        return await discover_facilities(latitude, longitude, radius_km)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/weather/nearby")

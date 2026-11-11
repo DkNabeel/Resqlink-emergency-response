@@ -41,7 +41,7 @@ API documentation: http://127.0.0.1:8000/docs
 | DELETE | /facilities/{facility_id} | Delete a facility |
 | POST | /facilities/{facility_id}/verification | Verify/unverify a facility with admin token |
 | GET | /facilities/nearby | Search facilities by straight-line distance |
-| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |
+| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |\n| POST | /routes/traffic | Traffic-aware driving ETA via Google Routes API |\n| GET | /facilities/discover | Find nearby OpenStreetMap facility candidates (unverified) |
 | GET | /offline/package | Download language-specific guides, 112, nearby verified facilities and location-matched alert snapshot; supports ETag/304 conditional refresh |
 
 ## Emergency request example
@@ -108,7 +108,7 @@ The backend retrieves RSS and linked CAP detail documents and stores sender, eve
 - IP geolocation is approximate and disabled by default.
 - A saved GPS position may become stale and must be checked using its recorded timestamp.
 - `/offline/package` returns a location-scoped data snapshot and supports `ETag` / `If-None-Match` so a mobile client can skip downloading an unchanged package. The mobile app must store and use the last successful response locally; the backend cannot retrieve live government feeds when the phone has no network. A `304 Not Modified` response means the client should retain its previously saved package.
-- Traffic data and route-time calculations are not integrated.
+- Traffic-aware ETA is available at POST /routes/traffic when GOOGLE_MAPS_ROUTES_API_KEY is configured. Google Routes API requires billing and traffic-aware requests are billed at a higher rate than traffic-unaware routes.\n- GET /facilities/discover searches OpenStreetMap community-mapped candidates. Results are never stored or verified automatically; confirm them from current official records before relying on them.
 - Push notification delivery is not guaranteed and must not replace official warning channels.
 
 ## Tests
@@ -131,3 +131,12 @@ See .env.example. Important settings:
 - FACILITY_ADMIN_TOKEN (protects facility verification endpoint)
 - WEATHER_CACHE_TTL_SECONDS
 - LOG_LEVEL
+
+
+## Traffic-aware routes
+
+POST /routes/traffic calculates one driving route with traffic-aware ETA and distance. Configure GOOGLE_MAPS_ROUTES_API_KEY on the backend, enable the Google Routes API in Google Cloud and configure billing and quota restrictions. Never place the key in the mobile application. Traffic-aware requests can have higher billing than traffic-unaware routing; see Google's official Routes API traffic options and pricing documentation.
+
+## Nearby facility discovery
+
+GET /facilities/discover?latitude=12.97&longitude=77.59&radius_km=5 queries the OpenStreetMap Overpass public service. Results are not official directory records. They are unverified suggestions only, cached for 15 minutes and not inserted into the ResQLink database. Verify every real facility against an official source before setting its verification_status to verified.
