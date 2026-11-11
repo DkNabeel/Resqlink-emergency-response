@@ -27,7 +27,11 @@ async function database() {
           "cache_key TEXT PRIMARY KEY, etag TEXT, payload_json TEXT NOT NULL, stored_at TEXT NOT NULL" +
           ");" +
           "CREATE TABLE IF NOT EXISTS app_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL);" +
-          "CREATE TABLE IF NOT EXISTS notified_alerts (alert_id TEXT PRIMARY KEY, notified_at TEXT NOT NULL);"
+          "CREATE TABLE IF NOT EXISTS notified_alerts (alert_id TEXT PRIMARY KEY, notified_at TEXT NOT NULL);" +
+          "CREATE TABLE IF NOT EXISTS location_snapshots (" +
+          "snapshot_id INTEGER PRIMARY KEY CHECK (snapshot_id = 1), latitude REAL NOT NULL, " +
+          "longitude REAL NOT NULL, accuracy_m REAL, recorded_at TEXT NOT NULL" +
+          ");"
       );
       return db;
     });
@@ -46,6 +50,28 @@ async function getDeviceId(db: SQLite.SQLiteDatabase) {
     id
   );
   return id;
+}
+
+export async function getLastBackgroundLocation(): Promise<{
+  latitude: number;
+  longitude: number;
+  accuracy_m?: number | null;
+  recorded_at?: string;
+} | null> {
+  try {
+    const db = await database();
+    const row = await db.getFirstAsync<{
+      latitude: number;
+      longitude: number;
+      accuracy_m: number | null;
+      recorded_at: string;
+    }>(
+      "SELECT latitude, longitude, accuracy_m, recorded_at FROM location_snapshots WHERE snapshot_id = 1"
+    );
+    return row ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function setBackgroundLanguage(language: string) {
