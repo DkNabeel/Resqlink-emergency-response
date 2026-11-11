@@ -99,6 +99,7 @@ async def get_traffic_route(
         "units": "m",
         "instructions": False,
         "geometry": True,
+        "geometry_format": "geojson",
     }
     headers = {
         "Authorization": api_key,
