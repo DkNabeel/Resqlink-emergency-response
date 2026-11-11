@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 
 from app.services.geospatial_service import (
@@ -64,7 +65,10 @@ class SachetParserTests(unittest.TestCase):
         alerts = parse_sachet_feed(SAMPLE_FEED)
         self.assertEqual(len(alerts), 1)
         alert = alerts[0]
-        self.assertEqual(alert["alert_id"], "sample-alert-001")
+        self.assertEqual(
+            alert["alert_id"],
+            hashlib.sha256(b"sample-alert-001").hexdigest(),
+        )
         self.assertEqual(alert["event"], "Flood")
         self.assertEqual(alert["severity"], "Severe")
         self.assertEqual(alert["area_description"], "Example District")
