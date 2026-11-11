@@ -175,6 +175,36 @@ export async function sendEmergencyChat(input: {
   return (await response.json()) as EmergencyResult;
 }
 
+export async function getNearbyFacilities(
+  point: Coordinates,
+  radiusKm = 10,
+): Promise<{ count: number; items: NearbyFacility[]; source?: string; note?: string }> {
+  const query = new URLSearchParams({
+    latitude: String(point.latitude),
+    longitude: String(point.longitude),
+    radius_km: String(radiusKm),
+  });
+  const response = await fetch(requireApiUrl() + "/facilities/discover?" + query.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error("Facility discovery failed with HTTP " + response.status + (detail ? ": " + detail.slice(0, 160) : "."));
+  }
+  return (await response.json()) as { count: number; items: NearbyFacility[]; source?: string; note?: string };
+}
+
+export async function cacheNearbyFacilities(facilities: NearbyFacility[]) {
+  const cached = await getLatestOfflinePackage();
+  if (!cached) return;
+  const payload = {
+    ...cached.payload,
+    nearby_discovered_facilities: facilities,
+  };
+  await saveOfflinePackage(cached.cacheKey, cached.etag, payload);
+}
+
 export async function getNearbyWeather(point: Coordinates): Promise<WeatherSnapshot> {
   const query = new URLSearchParams({
     latitude: String(point.latitude),
