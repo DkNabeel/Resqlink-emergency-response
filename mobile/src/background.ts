@@ -233,6 +233,16 @@ export async function startBackgroundMonitoring(): Promise<{
     };
   }
 
+  const servicesEnabled = await Location.hasServicesEnabledAsync();
+  if (!servicesEnabled) {
+    return {
+      locationEnabled: false,
+      backgroundEnabled: false,
+      notificationsEnabled: false,
+      message: "Turn on your phone's Location/GPS service, then press Allow again.",
+    };
+  }
+
   const notificationPermission = await Notifications.requestPermissionsAsync();
   const notificationsEnabled = notificationPermission.granted;
   await Notifications.setNotificationChannelAsync(ALERT_CHANNEL, {
