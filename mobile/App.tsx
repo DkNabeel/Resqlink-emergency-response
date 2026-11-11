@@ -638,6 +638,7 @@ export default function App() {
           : packageFacilities;
   const visibleFacilities = facilities
     .filter((facility) => matchesFacilityFilter(facility, facilityFilter))
+    .filter((facility) => typeof facility.distance_km !== "number" || facility.distance_km <= facilityRadiusKm)
     .sort((a, b) => (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY))
     .slice(0, 12);
 
