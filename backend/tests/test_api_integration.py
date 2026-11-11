@@ -103,17 +103,7 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertIn("damaged structures", body["reply"])
         self.assertEqual(body["emergency_contact"]["number"], "112")
 
-    def test_emergency_chat_includes_unverified_discovered_facilities(self):
-        candidate = {
-            "name": "OSM Demo Hospital",
-            "facility_type": "hospital",
-            "latitude": 12.9717,
-            "longitude": 77.5947,
-            "distance_km": 0.02,
-            "verification_status": "unverified",
-            "source_name": "OpenStreetMap contributors",
-            "verification_warning": "Community-mapped candidate only.",
-        }
+    def test_emergency_chat_does_not_wait_for_separate_facility_discovery(self):
         fake_chat = {
             "status": "connected",
             "provider": "Groq API",
@@ -121,15 +111,14 @@ class ResQLinkApiTests(unittest.TestCase):
             "in_scope": True,
             "emergency_type": "flood",
             "urgency": "urgent",
-            "reply": "Move to higher ground.",
+            "reply": "Move to higher ground immediately.",
             "follow_up_question": "Is floodwater already inside your building?",
         }
         with patch.dict(os.environ, {"GROQ_API_KEY": "integration-test-key", "AI_ENABLED": "true"}):
-            with patch(
-                "app.main.discover_facilities",
-                new=AsyncMock(return_value={"items": [candidate], "count": 1}),
-            ):
-                with patch("app.main.respond_to_emergency_chat", return_value=fake_chat) as groq:
+            with patch("app.main.discover_facilities", new=AsyncMock(
+                side_effect=AssertionError("Chat must not call the separate discovery API")
+            )) as discover:
+                with patch("app.main.respond_to_emergency_chat", return_value=fake_chat):
                     response = self.client.post(
                         "/emergency/chat",
                         json={
@@ -142,12 +131,8 @@ class ResQLinkApiTests(unittest.TestCase):
                     )
 
         self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["nearby_facilities"][0]["name"], "OSM Demo Hospital")
-        self.assertEqual(body["nearby_facilities"][0]["verification_status"], "unverified")
-        model_context = groq.call_args.args[-1]
-        self.assertEqual(model_context[0]["name"], "OSM Demo Hospital")
-        self.assertEqual(model_context[0]["verification_status"], "unverified")
+        self.assertEqual(response.json()["emergency_type"], "flood")
+        discover.assert_not_awaited()
 
     def test_emergency_chat_rejects_unrelated_request(self):
         fake_chat = {
