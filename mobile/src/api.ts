@@ -207,15 +207,28 @@ export async function getNearbyFacilities(
     const detail = await response.text().catch(() => "");
     throw new Error("Facility discovery failed with HTTP " + response.status + (detail ? ": " + detail.slice(0, 160) : "."));
   }
-  return (await response.json()) as { count: number; items: NearbyFacility[]; source?: string; note?: string };
+  return (await response.json()) as {
+    count: number;
+    items: NearbyFacility[];
+    source?: string;
+    note?: string;
+    cache_status?: string;
+    raw_element_count?: number;
+    provider_used?: string;
+    providers_checked?: string[];
+  };
 }
 
 export async function cacheNearbyFacilities(facilities: NearbyFacility[]) {
+  // Do not erase a previously downloaded offline facility list when a
+  // transient Overpass response is empty or the network is unavailable.
+  if (!facilities.length) return;
   const cached = await getLatestOfflinePackage();
   if (!cached) return;
   const payload = {
     ...cached.payload,
     nearby_discovered_facilities: facilities,
+    facility_discovery_status: "available",
   };
   await saveOfflinePackage(cached.cacheKey, cached.etag, payload);
 }
