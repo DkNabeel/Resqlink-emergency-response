@@ -1,12 +1,12 @@
 # ResQLink — AI-Based Multilingual Emergency Response
 
-ResQLink is a planned mobile emergency-assistance application. The current submission demo backend receives emergency messages, detects common emergency intents, returns general safety guidance in English/Hindi/Kannada, and can attach nearby stored facilities and official SACHET alerts when GPS coordinates are supplied.
+ResQLink is a mobile emergency-response project. This repository currently contains the FastAPI backend, SQLite persistence, multilingual rule-based emergency intent handling, NDMA SACHET alert ingestion, geospatial matching, facility management and an on-demand weather forecast adapter.
 
-Important: The emergency intent module is a transparent local keyword-based NLP fallback. Gemini is not yet connected to this endpoint. Native mobile screens, GPS permission flow, offline maps/cache and push notifications remain to be implemented.
+**Implementation honesty:** The current emergency intent module is deterministic keyword-based NLP, not Gemini. The native mobile application, device-side GPS permissions, on-device offline maps/cache, traffic provider and push notifications are not implemented in this backend snapshot.
 
 ## Backend setup
 
-From the backend folder:
+Run these commands in the backend folder:
 
 ~~~powershell
 py -3.13 -m venv .venv
@@ -14,7 +14,7 @@ py -3.13 -m venv .venv
 python -m pip install -r requirements.txt
 ~~~
 
-Copy .env.example to .env and set private values. Never commit .env.
+Copy .env.example to .env and configure private values. Never commit .env.
 
 ~~~powershell
 python -m app.database.init_db
@@ -23,27 +23,33 @@ python -m uvicorn app.main:app --reload
 
 API documentation: http://127.0.0.1:8000/docs
 
-## Main endpoints
+## API endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | /health | Backend and database health |
-| POST | /emergency | Detect emergency intent, return multilingual guidance, optionally attach nearby facilities and alerts |
-| GET | /alerts | Read stored SACHET records |
-| GET | /alerts/nearby | Match available alert geometry or explicitly labelled locality-text results |
-| GET | /alerts/sync-status | View SACHET collector state |
-| POST | /locations/resolve | Save GPS/manual location or attempt configured fallback |
-| GET | /locations/{device_id}/last-known | Retrieve saved location |
-| GET | /facilities | List stored emergency facilities |
-| GET | /facilities/nearby | Find stored facilities within a radius |
+| GET | /health | API/database health and record counts |
+| GET | /system/status | Provider and implementation status |
+| POST | /emergency | Multilingual emergency intent, safety guidance, India emergency contact and optional nearby context |
+| GET | /alerts | Stored SACHET alert records |
+| GET | /alerts/nearby | Match available CAP geometry or return explicitly unverified matches |
+| GET | /alerts/sync-status | SACHET collector status |
+| POST | /locations/resolve | Save GPS/manual location or use configured fallback |
+| GET | /locations/{device_id}/last-known | Retrieve saved location and freshness |
+| GET | /facilities | List/filter stored facilities |
+| POST | /facilities | Add a facility (unverified by default) |
+| PUT | /facilities/{facility_id} | Update a facility; resets its verification |
+| DELETE | /facilities/{facility_id} | Delete a facility |
+| POST | /facilities/{facility_id}/verification | Verify/unverify a facility with admin token |
+| GET | /facilities/nearby | Search facilities by straight-line distance |
+| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |
 
-## Emergency API example
+## Emergency request example
 
-Send this JSON to POST /emergency:
+POST /emergency:
 
 ~~~json
 {
-  "message": "There is a fire and smoke in my building",
+  "message": "There is smoke and fire in my building",
   "language": "en",
   "latitude": 12.9716,
   "longitude": 77.5946,
@@ -51,26 +57,56 @@ Send this JSON to POST /emergency:
 }
 ~~~
 
-Coordinates above are examples only. Omit both coordinates if unavailable. The API still returns intent and guidance, but cannot calculate nearby facilities or geographically compare alerts without a location.
+Supported response languages: en, hi, kn. The caller explicitly selects the response language. The local rule-based detector currently recognizes fire, flood, earthquake, cyclone, landslide, tsunami, lightning, gas leak, medical emergency, road accident and violence keywords. Multiple detected types are returned, with one primary category selected by a fixed priority order. This is a demo fallback, not a trained classifier or medical triage system.
 
-Supported response languages are en, hi and kn. Unsupported language values fall back to English.
+The emergency response includes India's unified ERSS number 112. The Ministry of Home Affairs describes 112 as the nationwide single emergency number for police, fire, health and other emergencies: https://www.mha.gov.in/emergency-response-support-system-erss
+
+## Weather endpoint
+
+GET /weather/nearby?latitude=12.9716&longitude=77.5946&forecast_hours=12
+
+The endpoint requests current model conditions and up to 24 forecast hours, normalizes precipitation probability, precipitation amount, weather code, wind and humidity, and caches responses in memory for 10 minutes by default. On provider failure, a cached snapshot up to 24 hours old may be returned with cache_status=stale and an explicit warning.
+
+Weather provider: https://open-meteo.com/en/docs
+
+Attribution is included in every response. The free Open-Meteo API is intended for non-commercial use and attribution is required; check current terms before deployment or commercial use: https://open-meteo.com/en/terms
+
+Weather model output is not an official government alert, a local sensor reading or a guarantee of conditions. Do not use it alone to decide whether an area is safe or whether to evacuate.
+
+## Facilities and verification
+
+New facilities are marked unverified. Store the organization/source name in source_name. A verification action requires FACILITY_ADMIN_TOKEN in backend/.env and the X-Admin-Token header. Verification notes should say exactly what source was checked. Any later edit resets the record to unverified so changed coordinates or phone numbers are not silently treated as checked.
+
+Example facility payload:
+
+~~~json
+{
+  "name": "Example District Hospital",
+  "facility_type": "hospital",
+  "latitude": 12.9716,
+  "longitude": 77.5946,
+  "address": "Enter a checked address",
+  "phone": "Enter a checked phone number",
+  "source_name": "Official district directory"
+}
+~~~
+
+Do not use this example as a real facility. Only enter verified real-world records after checking them against a current official source. Nearby distance is straight-line distance, not road distance or travel time.
 
 ## Official alert collection
 
 Default source: https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml
 
-The backend checks the RSS feed every five minutes by default and retrieves linked CAP details. CAP status, sender, event, severity, urgency, certainty, effective/expiry timestamps, language blocks and district geocodes are stored. The separate SACHET polygon endpoint currently returns HTTP 403 in this environment, so polygon-verified affected-area matching is not available. Locality text matching is a weaker fallback and is labelled accordingly.
+The backend retrieves RSS and linked CAP detail documents and stores sender, event, urgency, severity, certainty, timestamps, language blocks, area text and geocodes. The linked polygon endpoint has returned HTTP 403 in the current development environment. The backend therefore does not claim polygon-verified matching for those alerts. District/locality text matches are weaker and labelled as such.
 
-## Important safety and implementation limits
+## Location and offline limitations
 
+- GPS coordinates are provided by a future mobile client; this backend does not request a phone's GPS permission.
 - IP geolocation is approximate and disabled by default.
-- Stale GPS positions must not be treated as current.
-- Text or district matching does not establish polygon-level hazard boundaries.
-- The application must never claim a location is guaranteed safe.
-- Empty nearby-facility results may mean the facilities table has not been populated with verified records.
-- Emergency guidance is general; users must follow official local responders.
-- The current emergency endpoint uses local keyword NLP, not Gemini.
-- Mobile GPS permissions, on-device offline maps/cache, weather/traffic integrations and push notifications are not implemented in this backend snapshot.
+- A saved GPS position may become stale and must be checked using its recorded timestamp.
+- Offline mobile maps and cached emergency packages must be implemented on the device. The backend cannot retrieve live government feeds when the phone has no network.
+- Traffic data and route-time calculations are not integrated.
+- Push notification delivery is not guaranteed and must not replace official warning channels.
 
 ## Tests
 
@@ -80,21 +116,15 @@ Run from the backend folder:
 python -m unittest discover -s tests -v
 ~~~
 
-Tests cover local emergency intent detection, multilingual guidance, SACHET CAP parsing and basic geospatial logic. They do not prove live Gemini access, live polygon access or mobile application behavior.
+The test suite includes parser/geospatial tests, multilingual emergency tests, weather normalization/cache tests and API integration tests with an isolated temporary SQLite database. CI does not call live SACHET or Open-Meteo services.
 
-## Submission status
+## Environment variables
 
-Working in this backend:
-- FastAPI REST API and SQLite persistence
-- SACHET RSS and CAP detail ingestion
-- Multilingual emergency intent and guidance endpoint
-- Nearby stored-facility distance lookup
-- Available alert matching with unverified handling
+See .env.example. Important settings:
 
-Still required:
-- Gemini integration into emergency analysis
-- Native mobile application and permission flow
-- Mobile offline map and emergency-data cache
-- Weather/traffic and additional official providers
-- Supplementary app notifications
-- Full mobile end-to-end testing and research-paper validation
+- GEMINI_API_KEY and GEMINI_MODEL (Gemini is not yet integrated into POST /emergency)
+- SACHET_FEED_URL, SACHET_SYNC_ENABLED, SACHET_REFRESH_SECONDS
+- IP_GEOLOCATION_ENABLED and IP_GEOLOCATION_URL_TEMPLATE
+- FACILITY_ADMIN_TOKEN (protects facility verification endpoint)
+- WEATHER_CACHE_TTL_SECONDS
+- LOG_LEVEL

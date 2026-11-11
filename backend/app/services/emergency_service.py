@@ -1,109 +1,202 @@
-"""Local multilingual emergency intent detection and basic safety guidance."""
+"""Rule-based multilingual emergency intent detection and safety guidance.
+
+This module is a deterministic NLP fallback for development/demo use. It is
+not a trained model, does not diagnose injuries, and does not replace official
+emergency responders.
+"""
+import re
 import unicodedata
+
 
 TERMS = {
     "fire": {
-        "en": ["fire", "smoke", "burning", "flames"],
-        "hi": ["आग", "धुआँ", "जल रहा"],
-        "kn": ["ಬೆಂಕಿ", "ಹೊಗೆ", "ಸುಡುತ್ತ"],
+        "en": ["fire", "smoke", "burning", "flames", "building is on fire"],
+        "hi": ["आग", "धुआँ", "जल रहा", "आग लग"],
+        "kn": ["ಬೆಂಕಿ", "ಹೊಗೆ", "ಸುಡುತ್ತ", "ಅಗ್ನಿ"],
     },
     "flood": {
-        "en": ["flood", "flooding", "water rising", "drowning"],
-        "hi": ["बाढ़", "पानी भर", "डूब"],
-        "kn": ["ಪ್ರವಾಹ", "ನೀರು ತುಂಬ", "ಮುಳುಗ"],
+        "en": ["flood", "flooding", "water rising", "water entering house", "submerged"],
+        "hi": ["बाढ़", "पानी भर", "पानी चढ़", "जलभराव", "डूब"],
+        "kn": ["ಪ್ರವಾಹ", "ನೀರು ತುಂಬ", "ಮನೆಗೆ ನೀರು", "ಮುಳುಗ", "ಜಲಾವೃತ"],
     },
     "earthquake": {
-        "en": ["earthquake", "tremor", "ground shaking"],
-        "hi": ["भूकंप", "धरती हिल", "झटके"],
-        "kn": ["ಭೂಕಂಪ", "ನೆಲ ನಡುಗ", "ಕಂಪನ"],
+        "en": ["earthquake", "tremor", "ground shaking", "building shaking"],
+        "hi": ["भूकंप", "धरती हिल", "जमीन हिल", "झटके"],
+        "kn": ["ಭೂಕಂಪ", "ನೆಲ ನಡುಗ", "ಭೂಮಿ ಕಂಪ", "ಕಂಪನ"],
+    },
+    "cyclone": {
+        "en": ["cyclone", "hurricane", "typhoon", "extreme wind", "storm surge"],
+        "hi": ["चक्रवात", "तूफान", "तेज आंधी"],
+        "kn": ["ಚಂಡಮಾರುತ", "ಸುಂಟರಗಾಳಿ", "ಭಾರಿ ಗಾಳಿ"],
+    },
+    "landslide": {
+        "en": ["landslide", "mudslide", "slope collapse", "hill is collapsing"],
+        "hi": ["भूस्खलन", "पहाड़ खिसक", "मिट्टी धंस"],
+        "kn": ["ಭೂಕುಸಿತ", "ಬೆಟ್ಟ ಕುಸಿತ", "ಮಣ್ಣು ಕುಸಿತ"],
+    },
+    "tsunami": {
+        "en": ["tsunami", "sea wave warning", "ocean surge"],
+        "hi": ["सुनामी", "समुद्री लहर चेतावनी"],
+        "kn": ["ಸುನಾಮಿ", "ಸಮುದ್ರ ಅಲೆ ಎಚ್ಚರಿಕೆ"],
+    },
+    "lightning": {
+        "en": ["lightning", "thunder strike", "thunderstorm", "lightning strike"],
+        "hi": ["बिजली गिर", "आकाशीय बिजली", "गरज के साथ तूफान"],
+        "kn": ["ಮಿಂಚು", "ಸಿಡಿಲು", "ಗುಡುಗು ಮಳೆ"],
+    },
+    "gas_leak": {
+        "en": ["gas leak", "gas leakage", "smell of gas", "gas smell", "lpg leak"],
+        "hi": ["गैस रिसाव", "गैस लीक", "गैस की गंध", "एलपीजी लीक"],
+        "kn": ["ಅನಿಲ ಸೋರಿಕೆ", "ಗ್ಯಾಸ್ ಲೀಕ್", "ಅನಿಲದ ವಾಸನೆ"],
     },
     "medical": {
-        "en": ["bleeding", "unconscious", "not breathing", "chest pain", "heart attack", "medical emergency"],
-        "hi": ["खून बह", "बेहोश", "सांस नहीं", "सीने में दर्द"],
-        "kn": ["ರಕ್ತಸ್ರಾವ", "ಪ್ರಜ್ಞೆ ಇಲ್ಲ", "ಉಸಿರಾಡುತ್ತಿಲ್ಲ", "ಎದೆನೋವು"],
+        "en": ["bleeding", "unconscious", "not breathing", "cannot breathe", "can't breathe", "difficulty breathing", "shortness of breath", "chest pain", "heart attack", "medical emergency"],
+        "hi": ["खून बह", "बेहोश", "सांस नहीं", "सांस लेने में", "सीने में दर्द", "दिल का दौरा"],
+        "kn": ["ರಕ್ತಸ್ರಾವ", "ಪ್ರಜ್ಞೆ ಇಲ್ಲ", "ಉಸಿರಾಡುತ್ತಿಲ್ಲ", "ಉಸಿರಾಟದ ತೊಂದರೆ", "ಎದೆನೋವು", "ಹೃದಯಾಘಾತ"],
     },
     "road_accident": {
-        "en": ["road accident", "car crash", "vehicle crash", "collision", "bike accident"],
-        "hi": ["सड़क हादसा", "दुर्घटना", "गाड़ी टक्कर"],
-        "kn": ["ರಸ್ತೆ ಅಪಘಾತ", "ವಾಹನ ಡಿಕ್ಕಿ", "ಅಪಘಾತ"],
+        "en": ["road accident", "car crash", "vehicle crash", "collision", "bike accident", "road crash"],
+        "hi": ["सड़क हादसा", "दुर्घटना", "गाड़ी टक्कर", "बाइक दुर्घटना"],
+        "kn": ["ರಸ್ತೆ ಅಪಘಾತ", "ವಾಹನ ಡಿಕ್ಕಿ", "ಬೈಕ್ ಅಪಘಾತ", "ಅಪಘಾತ"],
     },
     "violence": {
-        "en": ["attacker", "being attacked", "assault", "armed person"],
-        "hi": ["हमला", "मारपीट", "धमकी"],
-        "kn": ["ದಾಳಿ", "ಹಲ್ಲೆ", "ಬೆದರಿಕೆ"],
+        "en": ["attacker", "being attacked", "assault", "armed person", "physical attack"],
+        "hi": ["हमला", "मारपीट", "धमकी", "हथियार"],
+        "kn": ["ದಾಳಿ", "ಹಲ್ಲೆ", "ಬೆದರಿಕೆ", "ಆಯುಧ"],
     },
 }
 
 GUIDANCE = {
     "en": {
-        "fire": ["Leave immediately through the nearest safe exit.", "Stay low under smoke; never use elevators.", "Do not re-enter; call local emergency services from a safe place."],
-        "flood": ["Move to higher ground immediately.", "Never walk or drive through floodwater.", "Stay away from electrical lines and follow official evacuation instructions."],
+        "fire": ["Leave immediately through the nearest safe exit.", "Stay low under smoke; never use elevators.", "Do not re-enter the building. Call emergency services from a safe place."],
+        "flood": ["Move to higher ground immediately; do not enter moving floodwater.", "Never walk, swim or drive through floodwater.", "Stay away from electrical equipment and fallen power lines; follow official evacuation instructions."],
         "earthquake": ["Drop, cover and hold on until shaking stops.", "Stay away from windows and heavy objects; do not use elevators.", "After shaking, leave damaged buildings carefully and expect aftershocks."],
-        "medical": ["Contact local emergency medical services immediately.", "Apply firm direct pressure to severe external bleeding.", "Do not move a seriously injured person unless there is immediate danger; follow dispatcher instructions."],
-        "road_accident": ["Move away from traffic if safe.", "Call local emergency services and give the exact location.", "Do not move injured people unless there is immediate danger; do not remove a motorcyclist's helmet."],
-        "violence": ["Move away from the threat and reach a secure place.", "Do not confront the attacker.", "Contact emergency services when safe; silence your phone if hiding."],
+        "cyclone": ["Stay inside a sturdy building and away from windows.", "Move to an official cyclone shelter if authorities instruct you to evacuate.", "Avoid coastal areas, floodwater, fallen trees and power lines."],
+        "landslide": ["Move away from the path of moving soil or debris if you can do so safely.", "Move to stable ground away from slopes, valleys and drainage channels.", "Follow evacuation orders; do not return until authorities say it is safe."],
+        "tsunami": ["After a strong or long coastal earthquake, move immediately to high ground or inland.", "Do not wait to watch the sea or approach the shore.", "Remain in the safe area until authorities issue an all-clear."],
+        "lightning": ["Move into a substantial enclosed building or hard-topped vehicle.", "Avoid open fields, isolated trees, hilltops, water and metal objects.", "Wait at least 30 minutes after the last thunder before returning outdoors."],
+        "gas_leak": ["Leave the area immediately and move upwind if possible.", "Do not operate switches, appliances, flames or vehicles near the suspected leak.", "From a safe location, call emergency services and do not re-enter until cleared."],
+        "medical": ["Contact emergency medical services immediately.", "For severe external bleeding, apply firm direct pressure with clean cloth or dressing.", "Do not move a seriously injured person unless there is immediate danger; follow dispatcher instructions."],
+        "road_accident": ["Move yourself away from traffic if you can do so safely.", "Call emergency services and provide the exact location and number of injured people.", "Do not move injured people unless there is immediate danger; do not remove a motorcyclist's helmet."],
+        "violence": ["Move away from the threat and reach a secure place if possible.", "Do not confront or approach the attacker.", "Contact emergency services when safe; silence your phone if hiding."],
         "unknown": ["Move away from immediate danger if possible.", "Contact local emergency services and give your exact location.", "Follow official local responder instructions."],
     },
     "hi": {
-        "fire": ["निकटतम सुरक्षित निकास से तुरंत बाहर निकलें।", "धुएँ में नीचे झुककर चलें; लिफ्ट का उपयोग न करें।", "वापस अंदर न जाएँ; सुरक्षित स्थान से स्थानीय आपातकालीन सेवा को कॉल करें।"],
-        "flood": ["तुरंत ऊँचे स्थान पर जाएँ।", "बाढ़ के पानी में पैदल या वाहन से न जाएँ।", "बिजली की तारों से दूर रहें और आधिकारिक निकासी निर्देश मानें।"],
+        "fire": ["निकटतम सुरक्षित निकास से तुरंत बाहर निकलें।", "धुएँ में नीचे झुककर चलें; लिफ्ट का उपयोग न करें।", "इमारत में वापस न जाएँ; सुरक्षित स्थान से आपातकालीन सेवा को कॉल करें।"],
+        "flood": ["तुरंत ऊँचे स्थान पर जाएँ; बहते पानी में प्रवेश न करें।", "बाढ़ के पानी में पैदल, तैरकर या वाहन से न जाएँ।", "बिजली के उपकरणों और गिरी तारों से दूर रहें; आधिकारिक निर्देश मानें।"],
         "earthquake": ["झटके रुकने तक नीचे झुकें, ढकें और पकड़े रहें।", "खिड़कियों और भारी वस्तुओं से दूर रहें; लिफ्ट न लें।", "झटके रुकने पर क्षतिग्रस्त इमारत से सावधानी से बाहर निकलें।"],
-        "medical": ["तुरंत स्थानीय चिकित्सा आपातकालीन सेवा से संपर्क करें।", "अधिक बाहरी रक्तस्राव पर साफ कपड़े से सीधा दबाव दें।", "तत्काल खतरा न हो तो गंभीर घायल को न हिलाएँ; डिस्पैचर के निर्देश मानें।"],
-        "road_accident": ["सुरक्षित हो तो यातायात से दूर जाएँ।", "आपातकालीन सेवा को कॉल करके सटीक स्थान बताएँ।", "तत्काल खतरा न हो तो घायल को न हिलाएँ; बाइक सवार का हेलमेट न हटाएँ।"],
+        "cyclone": ["मजबूत इमारत के अंदर रहें और खिड़कियों से दूर रहें।", "प्रशासन के आदेश पर आधिकारिक चक्रवात आश्रय में जाएँ।", "समुद्र तट, बाढ़ के पानी और गिरी बिजली की तारों से दूर रहें।"],
+        "landslide": ["संभव हो तो मिट्टी या मलबे के बहाव के रास्ते से दूर जाएँ।", "ढलानों, घाटियों और जल निकासी मार्गों से दूर स्थिर स्थान पर जाएँ।", "प्रशासन के निर्देश मानें और अनुमति मिलने तक वापस न लौटें।"],
+        "tsunami": ["तटीय क्षेत्र में तेज या लंबे भूकंप के बाद तुरंत ऊँचे स्थान या अंदरूनी क्षेत्र में जाएँ।", "समुद्र देखने या किनारे के पास जाने के लिए प्रतीक्षा न करें।", "अधिकारियों की सुरक्षित होने की सूचना तक वहीं रहें।"],
+        "lightning": ["किसी मजबूत बंद इमारत या बंद वाहन में जाएँ।", "खुले मैदान, अकेले पेड़, पहाड़ी चोटी और पानी से दूर रहें।", "आखिरी गर्जना के कम से कम 30 मिनट बाद ही बाहर जाएँ।"],
+        "gas_leak": ["तुरंत क्षेत्र छोड़ें और संभव हो तो हवा की दिशा के विपरीत सुरक्षित दूरी पर जाएँ।", "स्विच, उपकरण, आग या वाहन चालू न करें।", "सुरक्षित स्थान से आपातकालीन सेवा को कॉल करें; अनुमति मिलने तक वापस न जाएँ।"],
+        "medical": ["तुरंत चिकित्सा आपातकालीन सेवा से संपर्क करें।", "अधिक बाहरी रक्तस्राव पर साफ कपड़े से सीधा दबाव दें।", "तत्काल खतरा न हो तो गंभीर घायल को न हिलाएँ; डिस्पैचर के निर्देश मानें।"],
+        "road_accident": ["सुरक्षित हो तो खुद को यातायात से दूर करें।", "आपातकालीन सेवा को कॉल करके सटीक स्थान और घायलों की संख्या बताएँ।", "तत्काल खतरा न हो तो घायल को न हिलाएँ; बाइक सवार का हेलमेट न हटाएँ।"],
         "violence": ["खतरे से दूर होकर सुरक्षित स्थान पर जाएँ।", "हमलावर का सामना न करें।", "सुरक्षित होने पर आपातकालीन सेवा से संपर्क करें।"],
         "unknown": ["संभव हो तो तत्काल खतरे से दूर जाएँ।", "स्थानीय आपातकालीन सेवा से संपर्क कर सटीक स्थान बताएँ।", "स्थानीय अधिकारियों के निर्देश मानें।"],
     },
     "kn": {
         "fire": ["ಹತ್ತಿರದ ಸುರಕ್ಷಿತ ನಿರ್ಗಮನದ ಮೂಲಕ ತಕ್ಷಣ ಹೊರಬನ್ನಿ.", "ಹೊಗೆ ಇದ್ದರೆ ಕೆಳಮಟ್ಟದಲ್ಲಿ ಚಲಿಸಿ; ಲಿಫ್ಟ್ ಬಳಸಬೇಡಿ.", "ಮತ್ತೆ ಒಳಗೆ ಹೋಗಬೇಡಿ; ಸುರಕ್ಷಿತ ಸ್ಥಳದಿಂದ ತುರ್ತು ಸೇವೆಗೆ ಕರೆಮಾಡಿ."],
-        "flood": ["ತಕ್ಷಣ ಎತ್ತರದ ಪ್ರದೇಶಕ್ಕೆ ತೆರಳಿ.", "ಪ್ರವಾಹದ ನೀರಿನಲ್ಲಿ ನಡೆಯಬೇಡಿ ಅಥವಾ ವಾಹನ ಚಲಾಯಿಸಬೇಡಿ.", "ವಿದ್ಯುತ್ ತಂತಿಗಳಿಂದ ದೂರವಿದ್ದು ಅಧಿಕೃತ ಸೂಚನೆ ಪಾಲಿಸಿ."],
+        "flood": ["ತಕ್ಷಣ ಎತ್ತರದ ಪ್ರದೇಶಕ್ಕೆ ತೆರಳಿ; ಹರಿಯುವ ಪ್ರವಾಹದ ನೀರಿಗೆ ಇಳಿಯಬೇಡಿ.", "ಪ್ರವಾಹದ ನೀರಿನಲ್ಲಿ ನಡೆಯಬೇಡಿ ಅಥವಾ ವಾಹನ ಚಲಾಯಿಸಬೇಡಿ.", "ವಿದ್ಯುತ್ ಉಪಕರಣಗಳು ಮತ್ತು ಬಿದ್ದ ತಂತಿಗಳಿಂದ ದೂರವಿರಿ."],
         "earthquake": ["ಕಂಪನ ನಿಲ್ಲುವವರೆಗೆ ಕೆಳಗೆ ಬಾಗಿ, ಆಶ್ರಯ ಪಡೆದು ಹಿಡಿದುಕೊಳ್ಳಿ.", "ಕಿಟಕಿ ಮತ್ತು ಭಾರವಾದ ವಸ್ತುಗಳಿಂದ ದೂರವಿರಿ; ಲಿಫ್ಟ್ ಬಳಸಬೇಡಿ.", "ಕಂಪನ ನಿಂತ ನಂತರ ಹಾನಿಗೊಂಡ ಕಟ್ಟಡದಿಂದ ಎಚ್ಚರಿಕೆಯಿಂದ ಹೊರಬನ್ನಿ."],
+        "cyclone": ["ಗಟ್ಟಿಯಾದ ಕಟ್ಟಡದ ಒಳಗೆ ಇರಿ ಮತ್ತು ಕಿಟಕಿಗಳಿಂದ ದೂರವಿರಿ.", "ಅಧಿಕಾರಿಗಳು ಸೂಚಿಸಿದರೆ ಅಧಿಕೃತ ಚಂಡಮಾರುತ ಆಶ್ರಯಕ್ಕೆ ತೆರಳಿ.", "ಕರಾವಳಿ, ಪ್ರವಾಹದ ನೀರು ಮತ್ತು ಬಿದ್ದ ವಿದ್ಯುತ್ ತಂತಿಗಳಿಂದ ದೂರವಿರಿ."],
+        "landslide": ["ಸುರಕ್ಷಿತವಾಗಿ ಸಾಧ್ಯವಾದರೆ ಮಣ್ಣು ಅಥವಾ ಅವಶೇಷಗಳು ಹರಿಯುವ ದಾರಿಯಿಂದ ದೂರ ಸರಿಯಿರಿ.", "ಇಳಿಜಾರು, ಕಣಿವೆ ಮತ್ತು ನೀರು ಹರಿಯುವ ಮಾರ್ಗಗಳಿಂದ ದೂರದ ಸ್ಥಿರ ಸ್ಥಳಕ್ಕೆ ತೆರಳಿ.", "ಅಧಿಕೃತ ಸೂಚನೆ ಪಾಲಿಸಿ; ಅನುಮತಿ ಸಿಗುವವರೆಗೆ ಹಿಂದಿರುಗಬೇಡಿ."],
+        "tsunami": ["ಕರಾವಳಿಯಲ್ಲಿ ಬಲವಾದ ಅಥವಾ ದೀರ್ಘ ಭೂಕಂಪವಾದರೆ ತಕ್ಷಣ ಎತ್ತರದ ಅಥವಾ ಒಳನಾಡಿನ ಪ್ರದೇಶಕ್ಕೆ ತೆರಳಿ.", "ಸಮುದ್ರ ನೋಡಲು ಅಥವಾ ಕರಾವಳಿಗೆ ಹತ್ತಿರ ಹೋಗಲು ಕಾಯಬೇಡಿ.", "ಅಧಿಕಾರಿಗಳು ಸುರಕ್ಷಿತವೆಂದು ತಿಳಿಸುವವರೆಗೆ ಅಲ್ಲೇ ಇರಿ."],
+        "lightning": ["ಮುಚ್ಚಿದ ಬಲವಾದ ಕಟ್ಟಡ ಅಥವಾ ಗಟ್ಟಿಯಾದ ಮೇಲ್ಛಾವಣಿಯ ವಾಹನದೊಳಗೆ ಹೋಗಿ.", "ತೆರೆದ ಮೈದಾನ, ಒಂಟಿ ಮರ, ಬೆಟ್ಟದ ತುದಿ ಮತ್ತು ನೀರಿನಿಂದ ದೂರವಿರಿ.", "ಕೊನೆಯ ಗುಡುಗಿನ ನಂತರ ಕನಿಷ್ಠ 30 ನಿಮಿಷ ಕಾಯಿರಿ."],
+        "gas_leak": ["ತಕ್ಷಣ ಆ ಪ್ರದೇಶದಿಂದ ಹೊರಬನ್ನಿ; ಸಾಧ್ಯವಾದರೆ ಗಾಳಿಯ ವಿರುದ್ಧ ದಿಕ್ಕಿನಲ್ಲಿ ದೂರ ಸರಿಯಿರಿ.", "ಸ್ವಿಚ್, ವಿದ್ಯುತ್ ಉಪಕರಣ, ಬೆಂಕಿ ಅಥವಾ ವಾಹನವನ್ನು ಚಾಲನೆ ಮಾಡಬೇಡಿ.", "ಸುರಕ್ಷಿತ ಸ್ಥಳದಿಂದ ತುರ್ತು ಸೇವೆಗೆ ಕರೆಮಾಡಿ; ಅನುಮತಿ ಸಿಗುವವರೆಗೆ ಹಿಂದಿರುಗಬೇಡಿ."],
         "medical": ["ತಕ್ಷಣ ಸ್ಥಳೀಯ ವೈದ್ಯಕೀಯ ತುರ್ತು ಸೇವೆಯನ್ನು ಸಂಪರ್ಕಿಸಿ.", "ತೀವ್ರ ರಕ್ತಸ್ರಾವಕ್ಕೆ ಸ್ವಚ್ಛ ಬಟ್ಟೆಯಿಂದ ನೇರ ಒತ್ತಡ ನೀಡಿ.", "ತಕ್ಷಣದ ಅಪಾಯವಿಲ್ಲದಿದ್ದರೆ ಗಂಭೀರ ಗಾಯಾಳುವನ್ನು ಕದಲಿಸಬೇಡಿ."],
-        "road_accident": ["ಸುರಕ್ಷಿತವಾಗಿದ್ದರೆ ವಾಹನ ಸಂಚಾರದಿಂದ ದೂರವಿರಿ.", "ತುರ್ತು ಸೇವೆಗೆ ಕರೆಮಾಡಿ ನಿಖರ ಸ್ಥಳ ತಿಳಿಸಿ.", "ತಕ್ಷಣದ ಅಪಾಯವಿಲ್ಲದಿದ್ದರೆ ಗಾಯಾಳುವನ್ನು ಕದಲಿಸಬೇಡಿ; ಹೆಲ್ಮೆಟ್ ತೆಗೆಯಬೇಡಿ."],
+        "road_accident": ["ಸುರಕ್ಷಿತವಾಗಿದ್ದರೆ ವಾಹನ ಸಂಚಾರದಿಂದ ದೂರವಿರಿ.", "ತುರ್ತು ಸೇವೆಗೆ ಕರೆಮಾಡಿ ನಿಖರ ಸ್ಥಳ ಮತ್ತು ಗಾಯಾಳುಗಳ ಸಂಖ್ಯೆಯನ್ನು ತಿಳಿಸಿ.", "ತಕ್ಷಣದ ಅಪಾಯವಿಲ್ಲದಿದ್ದರೆ ಗಾಯಾಳುವನ್ನು ಕದಲಿಸಬೇಡಿ; ಹೆಲ್ಮೆಟ್ ತೆಗೆಯಬೇಡಿ."],
         "violence": ["ಅಪಾಯದಿಂದ ದೂರವಾಗಿ ಸುರಕ್ಷಿತ ಸ್ಥಳಕ್ಕೆ ತೆರಳಿ.", "ದಾಳಿ ಮಾಡುವವರನ್ನು ಎದುರಿಸಬೇಡಿ.", "ಸುರಕ್ಷಿತವಾದಾಗ ತುರ್ತು ಸೇವೆಯನ್ನು ಸಂಪರ್ಕಿಸಿ."],
         "unknown": ["ಸಾಧ್ಯವಾದರೆ ತಕ್ಷಣದ ಅಪಾಯದಿಂದ ದೂರವಿರಿ.", "ಸ್ಥಳೀಯ ತುರ್ತು ಸೇವೆಗೆ ಕರೆಮಾಡಿ ನಿಖರ ಸ್ಥಳ ತಿಳಿಸಿ.", "ಸ್ಥಳೀಯ ಅಧಿಕಾರಿಗಳ ಸೂಚನೆಗಳನ್ನು ಪಾಲಿಸಿ."],
     },
 }
 
+FACILITY_SUGGESTIONS = {
+    "fire": ["fire_station"],
+    "gas_leak": ["fire_station"],
+    "medical": ["hospital", "ambulance"],
+    "road_accident": ["hospital", "ambulance", "police"],
+    "violence": ["police"],
+    "earthquake": ["shelter", "hospital", "fire_station"],
+    "flood": ["shelter", "hospital", "fire_station"],
+    "cyclone": ["shelter", "hospital", "fire_station"],
+    "landslide": ["shelter", "hospital", "fire_station"],
+    "tsunami": ["shelter", "hospital", "fire_station"],
+    "lightning": ["hospital"],
+    "unknown": [],
+}
 
-def _norm(value):
+EMERGENCY_CONTACT_INDIA = {
+    "number": "112",
+    "dial_uri": "tel:112",
+    "label": "Emergency Response Support System (ERSS)",
+    "scope": "Pan-India emergency number for police, fire, health and other emergencies",
+    "source": "Ministry of Home Affairs, Government of India",
+    "source_url": "https://www.mha.gov.in/emergency-response-support-system-erss",
+}
+
+
+def _normalize(value):
     return unicodedata.normalize("NFKC", value or "").casefold()
 
 
+def _term_matches(text, term):
+    normalized = _normalize(term)
+    if not normalized:
+        return False
+    if normalized.isascii():
+        pattern = r"(?<![a-z0-9])" + re.escape(normalized) + r"(?![a-z0-9])"
+        return re.search(pattern, text, flags=re.IGNORECASE) is not None
+    return normalized in text
+
+
 def detect_emergency(message):
-    text = _norm(message)
+    """Return all keyword-matched intents and a deterministic primary category."""
+    text = _normalize(message)
     found_by_type = {}
     for category, translations in TERMS.items():
         found = []
         for words in translations.values():
-            found.extend(word for word in words if _norm(word) in text)
+            found.extend(word for word in words if _term_matches(text, word))
         if found:
             found_by_type[category] = list(dict.fromkeys(found))
-    priority = ("fire", "earthquake", "flood", "medical", "road_accident", "violence")
-    category = next((name for name in priority if name in found_by_type), "unknown")
+
+    priority = (
+        "fire", "gas_leak", "earthquake", "tsunami", "flood",
+        "landslide", "cyclone", "lightning", "medical",
+        "road_accident", "violence",
+    )
+    primary = next((name for name in priority if name in found_by_type), "unknown")
     return {
-        "emergency_type": category,
-        "matched_keywords": found_by_type.get(category, []),
+        "emergency_type": primary,
+        "matched_keywords": found_by_type.get(primary, []),
         "all_detected_types": list(found_by_type),
+        "multiple_emergency_types_detected": len(found_by_type) > 1,
         "method": "multilingual_keyword_intent_detection",
-        "confidence_label": "keyword_match" if category != "unknown" else "not_detected",
+        "confidence_label": "keyword_match" if primary != "unknown" else "not_detected",
     }
 
 
 def build_emergency_response(message, language="en"):
+    """Create a localized response; language is selected by the API caller."""
     lang = (language or "en").lower().split("-")[0]
     if lang not in GUIDANCE:
         lang = "en"
-    result = detect_emergency(message)
-    category = result["emergency_type"]
+
+    analysis = detect_emergency(message)
+    category = analysis["emergency_type"]
     notices = {
-        "en": "General guidance only. Contact local emergency services and follow official instructions.",
-        "hi": "यह सामान्य मार्गदर्शन है। स्थानीय आपातकालीन सेवा और आधिकारिक निर्देशों का पालन करें।",
-        "kn": "ಇದು ಸಾಮಾನ್ಯ ಮಾರ್ಗದರ್ಶನ ಮಾತ್ರ. ಸ್ಥಳೀಯ ತುರ್ತು ಸೇವೆ ಮತ್ತು ಅಧಿಕೃತ ಸೂಚನೆಗಳನ್ನು ಪಾಲಿಸಿ.",
+        "en": "General guidance only. Call 112 in India and follow official responder instructions.",
+        "hi": "यह सामान्य मार्गदर्शन है। भारत में 112 पर कॉल करें और आधिकारिक बचाव निर्देशों का पालन करें।",
+        "kn": "ಇದು ಸಾಮಾನ್ಯ ಮಾರ್ಗದರ್ಶನ ಮಾತ್ರ. ಭಾರತದಲ್ಲಿ 112ಕ್ಕೆ ಕರೆಮಾಡಿ ಮತ್ತು ಅಧಿಕೃತ ರಕ್ಷಣಾ ಸೂಚನೆಗಳನ್ನು ಪಾಲಿಸಿ.",
     }
+
     return {
-        **result,
+        **analysis,
         "language": lang,
         "urgency": "urgent" if category != "unknown" else "undetermined",
         "guidance": GUIDANCE[lang][category],
+        "recommended_facility_types": FACILITY_SUGGESTIONS[category],
+        "emergency_contact": EMERGENCY_CONTACT_INDIA,
         "safety_notice": notices[lang],
     }

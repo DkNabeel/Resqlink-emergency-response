@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,7 @@ from app.database.facility_repository import (
     create_facility,
     delete_facility,
     get_all_facilities,
+    set_facility_verification,
     update_facility,
 )
 from app.database.init_db import create_tables
@@ -32,6 +34,7 @@ from app.services.emergency_service import build_emergency_response
 from app.services.geospatial_service import haversine_km, match_alert_location
 from app.services.location_service import estimate_location_from_ip
 from app.services.sachet_service import DEFAULT_SACHET_FEED, sync_sachet_feed
+from app.services.weather_service import WeatherServiceError, get_weather_snapshot
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -82,7 +85,7 @@ app = FastAPI(
         "Backend API for multilingual emergency assistance, official alert "
         "collection, location resilience and nearby facility information."
     ),
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -105,6 +108,12 @@ class FacilityRequest(BaseModel):
     longitude: float = Field(ge=-180, le=180)
     address: Optional[str] = Field(default=None, max_length=300)
     phone: Optional[str] = Field(default=None, max_length=40)
+    source_name: Optional[str] = Field(default=None, max_length=200)
+
+
+class FacilityVerificationRequest(BaseModel):
+    verification_status: Literal["verified", "unverified"]
+    verification_note: str = Field(min_length=8, max_length=500)
 
 
 class LocationResolveRequest(BaseModel):
@@ -155,6 +164,44 @@ def health():
         "status": "ok",
         "database": "connected",
         "stored_alerts": get_alert_count(),
+        "stored_facilities": len(get_all_facilities()),
+        "api_version": app.version,
+    }
+
+
+@app.get("/system/status")
+def system_status():
+    feed_state = get_feed_state(SACHET_FEED_URL)
+    return {
+        "api": {"status": "ok", "version": app.version},
+        "database": {
+            "status": "connected",
+            "stored_alerts": get_alert_count(),
+            "stored_facilities": len(get_all_facilities()),
+        },
+        "providers": {
+            "sachet": {
+                "configured": bool(SACHET_FEED_URL),
+                "background_sync_enabled": os.getenv("SACHET_SYNC_ENABLED", "true").lower()
+                    in {"1", "true", "yes", "on"},
+                "last_sync": feed_state,
+            },
+            "weather": {
+                "provider": "Open-Meteo",
+                "request_mode": "on-demand",
+                "api_key_required": False,
+            },
+            "gemini": {
+                "api_key_configured": bool(os.getenv("GEMINI_API_KEY")),
+                "endpoint_connected": False,
+                "note": "Gemini is not currently used by POST /emergency.",
+            },
+        },
+        "mobile": {
+            "native_app": "not_implemented",
+            "on_device_offline_cache": "not_implemented",
+            "push_notifications": "not_implemented",
+        },
     }
 
 
@@ -407,10 +454,36 @@ def last_known_location(device_id: str):
     )
 
 
+@app.get("/weather/nearby")
+async def nearby_weather(
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+    forecast_hours: int = Query(default=12, ge=1, le=24),
+):
+    try:
+        return await get_weather_snapshot(latitude, longitude, forecast_hours)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except WeatherServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.get("/facilities")
-def list_facilities():
-    items = get_all_facilities()
-    return {"count": len(items), "items": items}
+def list_facilities(
+    facility_type: Optional[str] = None,
+    verification_status: Optional[Literal["verified", "unverified"]] = None,
+    limit: int = Query(default=500, ge=1, le=1000),
+):
+    items = get_all_facilities(
+        verification_status=verification_status,
+        facility_type=facility_type,
+        limit=limit,
+    )
+    return {
+        "count": len(items),
+        "items": items,
+        "important": "Newly entered facilities are unverified until checked against a reliable source.",
+    }
 
 
 @app.post("/facilities", status_code=201)
@@ -422,11 +495,42 @@ def add_facility(payload: FacilityRequest):
         longitude=payload.longitude,
         address=payload.address.strip() if payload.address else None,
         phone=payload.phone.strip() if payload.phone else None,
+        source_name=payload.source_name.strip() if payload.source_name else None,
     )
     return {
         "status": "created",
         "facility_id": facility_id,
-        "message": "Facility saved. Verify its details and phone number before relying on it.",
+        "verification_status": "unverified",
+        "message": "Facility saved as unverified. Check its location, service and phone number before relying on it.",
+    }
+
+
+@app.post("/facilities/{facility_id}/verification")
+def verify_facility(
+    facility_id: int,
+    payload: FacilityVerificationRequest,
+    x_admin_token: Optional[str] = None,
+):
+    configured_token = os.getenv("FACILITY_ADMIN_TOKEN", "")
+    if not configured_token:
+        raise HTTPException(
+            status_code=503,
+            detail="Facility verification is disabled. Configure FACILITY_ADMIN_TOKEN first.",
+        )
+    if not x_admin_token or not secrets.compare_digest(configured_token, x_admin_token):
+        raise HTTPException(status_code=403, detail="Invalid facility administration token.")
+
+    updated = set_facility_verification(
+        facility_id,
+        payload.verification_status,
+        payload.verification_note.strip(),
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Facility not found.")
+    return {
+        "status": "updated",
+        "facility_id": facility_id,
+        "verification_status": payload.verification_status,
     }
 
 
@@ -440,10 +544,16 @@ def edit_facility(facility_id: int, payload: FacilityRequest):
         longitude=payload.longitude,
         address=payload.address.strip() if payload.address else None,
         phone=payload.phone.strip() if payload.phone else None,
+        source_name=payload.source_name.strip() if payload.source_name else None,
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Facility not found.")
-    return {"status": "updated", "facility_id": facility_id}
+    return {
+        "status": "updated",
+        "facility_id": facility_id,
+        "verification_status": "unverified",
+        "message": "Facility details changed; its verification status has been reset.",
+    }
 
 
 @app.delete("/facilities/{facility_id}")
@@ -460,9 +570,14 @@ def nearby_facilities(
     longitude: float = Query(ge=-180, le=180),
     radius_km: float = Query(default=10, gt=0, le=200),
     facility_type: Optional[str] = None,
+    verified_only: bool = False,
 ):
     results = []
-    for facility in get_all_facilities():
+    facilities = get_all_facilities(
+        verification_status="verified" if verified_only else None,
+        facility_type=facility_type,
+    )
+    for facility in facilities:
         if facility_type and facility["facility_type"].casefold() != facility_type.casefold():
             continue
         distance = haversine_km(
@@ -478,5 +593,7 @@ def nearby_facilities(
     return {
         "count": len(results),
         "radius_km": radius_km,
+        "verified_only": verified_only,
         "items": results,
+        "important": "Distance is straight-line distance, not driving time. Unverified facilities must be checked before use.",
     }

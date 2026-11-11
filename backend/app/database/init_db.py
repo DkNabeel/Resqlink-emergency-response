@@ -1,6 +1,14 @@
 from app.database.connection import get_connection
 
 
+FACILITY_COLUMN_MIGRATIONS = {
+    "source_name": "TEXT",
+    "verification_status": "TEXT NOT NULL DEFAULT 'unverified'",
+    "verification_note": "TEXT",
+    "last_verified_at": "TEXT",
+}
+
+
 ALERT_COLUMN_MIGRATIONS = {
     "sender": "TEXT",
     "scope": "TEXT",
@@ -23,7 +31,11 @@ def create_tables():
                 latitude REAL NOT NULL,
                 longitude REAL NOT NULL,
                 address TEXT,
-                phone TEXT
+                phone TEXT,
+                source_name TEXT,
+                verification_status TEXT NOT NULL DEFAULT 'unverified',
+                verification_note TEXT,
+                last_verified_at TEXT
             )
         """)
 
@@ -62,6 +74,15 @@ def create_tables():
         """)
 
         # Add columns to existing databases without deleting any stored records.
+        existing_facility_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(facilities)")
+        }
+        for column, definition in FACILITY_COLUMN_MIGRATIONS.items():
+            if column not in existing_facility_columns:
+                connection.execute(
+                    f"ALTER TABLE facilities ADD COLUMN {column} {definition}"
+                )
+
         existing_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(alerts)")
         }
