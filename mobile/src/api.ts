@@ -105,6 +105,31 @@ export async function downloadOfflinePackage(
   return { payload, cacheStatus: "live", cached: stored };
 }
 
+export type SystemStatus = {
+  api?: { status?: string; version?: string };
+  providers?: {
+    ai?: {
+      provider?: string;
+      enabled?: boolean;
+      api_key_configured?: boolean;
+      primary_model?: string;
+      fallback_model?: string;
+    };
+  };
+};
+
+export async function getSystemStatus(): Promise<SystemStatus> {
+  const response = await fetch(requireApiUrl() + "/system/status", {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error("Backend health check failed with HTTP " + response.status + (detail ? ": " + detail.slice(0, 180) : ""));
+  }
+  return (await response.json()) as SystemStatus;
+}
+
 export async function sendEmergency(input: {
   message: string;
   language: string;
@@ -120,7 +145,12 @@ export async function sendEmergency(input: {
     body: JSON.stringify(input),
   });
   if (!response.ok) {
-    throw new Error("Emergency API request failed with HTTP " + response.status + ".");
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      "Emergency API request failed with HTTP " +
+        response.status +
+        (detail ? ": " + detail.slice(0, 220) : "."),
+    );
   }
   return (await response.json()) as EmergencyResult;
 }
