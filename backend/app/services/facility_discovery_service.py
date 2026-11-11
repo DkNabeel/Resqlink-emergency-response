@@ -16,9 +16,10 @@ from app.services.geospatial_service import haversine_km
 _configured_overpass_url = os.getenv("OVERPASS_URL", "").strip()
 OVERPASS_URLS = tuple(dict.fromkeys(url for url in (
     _configured_overpass_url,
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
 ) if url))
 CACHE_SECONDS = 600
 _CACHE = {}
@@ -112,7 +113,7 @@ async def discover_facilities(latitude, longitude, radius_km=5):
 
     radius_m = int(radius_km * 1000)
     query = f"""
-[out:json][timeout:10];
+[out:json][timeout:25];
 (
   nwr(around:{radius_m},{latitude},{longitude})["amenity"~"hospital|police|fire_station|shelter"];
   nwr(around:{radius_m},{latitude},{longitude})["emergency"="ambulance_station"];
@@ -128,15 +129,26 @@ out center tags;
         failures = []
         data = None
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(6.0, connect=2.5),
+            timeout=httpx.Timeout(12.0, connect=4.0),
             headers={
                 "User-Agent": "ResQLink-EmergencyResponse/1.1 (emergency facility discovery)",
                 "Accept": "application/json",
             },
         ) as client:
-            for endpoint in OVERPASS_URLS:
+            for endpoint_index, endpoint in enumerate(OVERPASS_URLS):
                 try:
-                    response = await client.post(endpoint, data={"data": query})
+                    # Match the 25-second Overpass query budget on the instance
+                    # confirmed by the user's Overpass Turbo test. Keep fallbacks
+                    # bounded so a failed primary does not stall facility lookup.
+                    request_timeout = httpx.Timeout(
+                        35.0 if endpoint_index == 0 else 12.0,
+                        connect=5.0 if endpoint_index == 0 else 4.0,
+                    )
+                    response = await client.post(
+                        endpoint,
+                        data={"data": query},
+                        timeout=request_timeout,
+                    )
                     response.raise_for_status()
                     candidate_data = response.json()
                     if not isinstance(candidate_data, dict) or not isinstance(candidate_data.get("elements"), list):
