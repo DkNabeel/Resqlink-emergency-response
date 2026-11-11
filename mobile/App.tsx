@@ -514,7 +514,7 @@ export default function App() {
   if (!permissionsReady) {
     return (
       <SafeAreaView style={styles.safe}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#030303" />
         <View style={styles.permissionGate}>
           <View style={styles.logo}><Text style={styles.logoText}>R</Text></View>
           <Text style={styles.permissionTitle}>Enable ResQLink protection</Text>
@@ -523,7 +523,7 @@ export default function App() {
           </Text>
           <Text style={styles.permissionMessage}>{permissionMessage}</Text>
           <Pressable onPress={enableRequiredPermissions} disabled={permissionBusy} style={styles.permissionButton}>
-            {permissionBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.permissionButtonText}>Allow required permissions</Text>}
+            {permissionBusy ? <ActivityIndicator color="#F7F7F7" /> : <Text style={styles.permissionButtonText}>Allow required permissions</Text>}
           </Pressable>
           <Pressable onPress={() => Linking.openSettings()} style={styles.permissionSettings}>
             <Text style={styles.permissionSettingsText}>Open phone Settings</Text>
@@ -536,7 +536,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" backgroundColor="#030303" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.topBar}>
           <View style={styles.brandRow}>
@@ -609,7 +609,7 @@ export default function App() {
             value={message}
             onChangeText={(value) => { setMessage(value); setSelectedPrompt(""); }}
             placeholder={copy.placeholder}
-            placeholderTextColor="#8793A2"
+            placeholderTextColor="#AEABA8"
             multiline
             scrollEnabled
             maxLength={4000}
@@ -620,7 +620,7 @@ export default function App() {
         </View>
 
         <Pressable onPress={handleEmergency} disabled={busy} style={({ pressed }) => [styles.analyzeButton, pressed && styles.pressed, busy && styles.disabled]}>
-          {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.analyzeIcon}>✦</Text>}
+          {busy ? <ActivityIndicator color="#F7F7F7" /> : <Text style={styles.analyzeIcon}>✦</Text>}
           <Text style={styles.analyzeText}>{busy ? "Analyzing..." : copy.analyze}</Text>
           {!busy && <Text style={styles.analyzeArrow}>→</Text>}
         </Pressable>
@@ -749,7 +749,7 @@ export default function App() {
             <Text style={styles.facilityHint}>Searching a 20 km radius for hospitals, clinics, pharmacies, police, fire stations, ambulance services, shelters and colleges. Map candidates remain unverified.</Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
-                <ActivityIndicator color="#147A6A" />
+                <ActivityIndicator color="#C71A06" />
                 <Text style={styles.facilityMeta}>Finding nearby hospitals, shelters, fire and police services...</Text>
               </View>
             ) : null}
@@ -869,7 +869,7 @@ export default function App() {
                 <Text style={styles.weatherCloseText}>✕</Text>
               </Pressable>
             </View>
-            {weatherBusy ? <ActivityIndicator color="#147A6A" size="large" /> : weatherData?.current ? (
+            {weatherBusy ? <ActivityIndicator color="#C71A06" size="large" /> : weatherData?.current ? (
               <>
                 <Text style={styles.weatherCondition}>{weatherData.current.condition ?? "Current conditions"}</Text>
                 <Text style={styles.weatherTemperature}>{weatherData.current.temperature_c ?? "—"}°C</Text>
@@ -890,159 +890,159 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F7F7F7" },
+  safe: { flex: 1, backgroundColor: "#030303" },
   permissionGate: { flex: 1, justifyContent: "center", alignItems: "center", padding: 28, gap: 16 },
-  permissionTitle: { color: "#173849", fontSize: 24, fontWeight: "900", textAlign: "center" },
-  permissionBody: { color: "#617686", fontSize: 13, lineHeight: 20, textAlign: "center" },
-  permissionMessage: { color: "#9A6720", backgroundColor: "#FFF6E6", borderRadius: 10, padding: 12, fontSize: 11, lineHeight: 17, textAlign: "center" },
-  permissionButton: { backgroundColor: "#147A6A", borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, minWidth: "100%", alignItems: "center" },
+  permissionTitle: { color: "#F7F7F7", fontSize: 24, fontWeight: "900", textAlign: "center" },
+  permissionBody: { color: "#AEABA8", fontSize: 13, lineHeight: 20, textAlign: "center" },
+  permissionMessage: { color: "#C38F6C", backgroundColor: "#1B1716", borderWidth: 1, borderColor: "#5B3733", borderRadius: 10, padding: 12, fontSize: 11, lineHeight: 17, textAlign: "center" },
+  permissionButton: { backgroundColor: "#C71A06", borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, minWidth: "100%", alignItems: "center" },
   permissionButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
   permissionSettings: { padding: 10 },
-  permissionSettingsText: { color: "#14715F", fontSize: 12, fontWeight: "800" },
-  permissionFootnote: { color: "#8A98A6", fontSize: 10, lineHeight: 15, textAlign: "center" },
+  permissionSettingsText: { color: "#C38F6C", fontSize: 12, fontWeight: "800" },
+  permissionFootnote: { color: "#AEABA8", fontSize: 10, lineHeight: 15, textAlign: "center" },
   container: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 44, gap: 14 },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  logo: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#123B50", alignItems: "center", justifyContent: "center" },
+  logo: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#C71A06", alignItems: "center", justifyContent: "center" },
   logoText: { color: "#FFFFFF", fontWeight: "900", fontSize: 23 },
-  brand: { color: "#123344", fontSize: 21, fontWeight: "900", letterSpacing: -0.5 },
-  brandSub: { color: "#758494", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginTop: 1 },
-  weatherPill: { backgroundColor: "#EAF4F5", borderWidth: 1, borderColor: "#D5E7E9", borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  weatherPillText: { color: "#1C6870", fontSize: 11, fontWeight: "800" },
-  weatherPillArrow: { color: "#1C6870", fontSize: 15, fontWeight: "900" },
-  readyPill: { backgroundColor: "#EEF1EF", borderRadius: 30, paddingHorizontal: 11, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 6 },
-  readyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#1C9A65" },
-  readyText: { color: "#4E675E", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  brand: { color: "#F7F7F7", fontSize: 21, fontWeight: "900", letterSpacing: -0.5 },
+  brandSub: { color: "#AEABA8", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginTop: 1 },
+  weatherPill: { backgroundColor: "#141414", borderWidth: 1, borderColor: "#2A2A2A", borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  weatherPillText: { color: "#C38F6C", fontSize: 11, fontWeight: "800" },
+  weatherPillArrow: { color: "#C38F6C", fontSize: 15, fontWeight: "900" },
+  readyPill: { backgroundColor: "#171717", borderRadius: 30, borderWidth: 1, borderColor: "#292929", paddingHorizontal: 11, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 6 },
+  readyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#C38F6C" },
+  readyText: { color: "#AEABA8", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
   hero: { gap: 6, paddingVertical: 4 },
-  eyebrow: { color: "#5B3733", fontSize: 10, fontWeight: "900", letterSpacing: 1.8 },
-  heroTitle: { color: "#171C20", fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },
-  heroSub: { color: "#6F7479", fontSize: 13, lineHeight: 20, maxWidth: 500 },
-  sosCard: { backgroundColor: "#FAF2EF", borderRadius: 17, borderWidth: 1, borderColor: "#EBDCD7", padding: 13, flexDirection: "row", alignItems: "center", gap: 12 },
-  sosIcon: { width: 46, height: 46, backgroundColor: "#D9432F", borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  eyebrow: { color: "#C38F6C", fontSize: 10, fontWeight: "900", letterSpacing: 1.8 },
+  heroTitle: { color: "#F7F7F7", fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },
+  heroSub: { color: "#AEABA8", fontSize: 13, lineHeight: 20, maxWidth: 500 },
+  sosCard: { backgroundColor: "#171313", borderRadius: 17, borderWidth: 1, borderColor: "#5B3733", padding: 13, flexDirection: "row", alignItems: "center", gap: 12 },
+  sosIcon: { width: 46, height: 46, backgroundColor: "#C71A06", borderRadius: 13, alignItems: "center", justifyContent: "center" },
   sosIconText: { color: "#FFFFFF", fontWeight: "900", fontSize: 17 },
   sosCopy: { flex: 1, gap: 3 },
-  sosTitle: { color: "#862B20", fontSize: 14, fontWeight: "900" },
-  sosSub: { color: "#A15B4F", fontSize: 11 },
-  sosArrow: { color: "#C94A38", fontSize: 22, fontWeight: "700" },
+  sosTitle: { color: "#F7F7F7", fontSize: 14, fontWeight: "900" },
+  sosSub: { color: "#AEABA8", fontSize: 11 },
+  sosArrow: { color: "#C71A06", fontSize: 22, fontWeight: "700" },
   sectionHeader: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginBottom: -9 },
-  sectionTitle: { color: "#1B3547", fontSize: 14, fontWeight: "900" },
-  sectionHint: { color: "#8A98A6", fontSize: 10, fontWeight: "600" },
+  sectionTitle: { color: "#F7F7F7", fontSize: 14, fontWeight: "900" },
+  sectionHint: { color: "#AEABA8", fontSize: 10, fontWeight: "600" },
   languageRow: { flexDirection: "row", gap: 8 },
-  languageButton: { flex: 1, paddingVertical: 12, borderRadius: 11, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E1E7ED", alignItems: "center" },
-  languageSelected: { backgroundColor: "#123B50", borderColor: "#123B50" },
-  languageText: { color: "#647687", fontSize: 12, fontWeight: "800" },
+  languageButton: { flex: 1, paddingVertical: 12, borderRadius: 11, backgroundColor: "#121212", borderWidth: 1, borderColor: "#2C2C2C", alignItems: "center" },
+  languageSelected: { backgroundColor: "#C71A06", borderColor: "#C71A06" },
+  languageText: { color: "#AEABA8", fontSize: 12, fontWeight: "800" },
   languageTextSelected: { color: "#FFFFFF" },
   quickScroller: { flexDirection: "row", gap: 8, paddingRight: 4, paddingVertical: 2 },
-  quickChip: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#FFFFFF", borderRadius: 13, borderWidth: 1, borderColor: "#E7E1D8", paddingHorizontal: 13, paddingVertical: 11 },
-  quickSelected: { borderColor: "#C38F6C", backgroundColor: "#F5EFEB" },
+  quickChip: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#131313", borderRadius: 13, borderWidth: 1, borderColor: "#2B2B2B", paddingHorizontal: 13, paddingVertical: 11 },
+  quickSelected: { borderColor: "#C71A06", backgroundColor: "#211412" },
   quickChipEmoji: { fontSize: 16 },
-  quickChipLabel: { color: "#4C5B67", fontSize: 11, fontWeight: "800" },
-  quickLabelSelected: { color: "#5B3733" },
-  inputCard: { borderWidth: 1, borderColor: "#E6DED4", backgroundColor: "#FFFFFF", borderRadius: 19, padding: 13, gap: 8 },
-  input: { height: 116, fontSize: 14, color: "#192F3D", lineHeight: 21, padding: 3 },
-  inputFoot: { borderTopWidth: 1, borderColor: "#F0F2F4", paddingTop: 8 },
-  inputHint: { color: "#92A0AD", fontSize: 10 },
-  locationCard: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#E7E1D8", padding: 11, flexDirection: "row", alignItems: "center", gap: 10 },
-  locationIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#F0F1F1", alignItems: "center", justifyContent: "center" },
-  locationIconText: { color: "#157B70", fontSize: 23 },
+  quickChipLabel: { color: "#AEABA8", fontSize: 11, fontWeight: "800" },
+  quickLabelSelected: { color: "#F7F7F7" },
+  inputCard: { borderWidth: 1, borderColor: "#303030", backgroundColor: "#111111", borderRadius: 19, padding: 13, gap: 8 },
+  input: { height: 116, fontSize: 14, color: "#F7F7F7", lineHeight: 21, padding: 3 },
+  inputFoot: { borderTopWidth: 1, borderColor: "#292929", paddingTop: 8 },
+  inputHint: { color: "#AEABA8", fontSize: 10 },
+  locationCard: { backgroundColor: "#111111", borderRadius: 16, borderWidth: 1, borderColor: "#2B2B2B", padding: 11, flexDirection: "row", alignItems: "center", gap: 10 },
+  locationIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#1A1A1A", alignItems: "center", justifyContent: "center" },
+  locationIconText: { color: "#C38F6C", fontSize: 23 },
   locationCopy: { flex: 1, gap: 3 },
-  locationTitle: { color: "#243E50", fontSize: 12, fontWeight: "900" },
-  locationSub: { color: "#83919E", fontSize: 10 },
-  locationAction: { backgroundColor: "#F1F1EF", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
-  locationActionText: { color: "#3F4A51", fontSize: 10, fontWeight: "900" },
-  analyzeButton: { backgroundColor: "#B94A32", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#5B3733", shadowOpacity: 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  locationTitle: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
+  locationSub: { color: "#AEABA8", fontSize: 10 },
+  locationAction: { backgroundColor: "#211412", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
+  locationActionText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
+  analyzeButton: { backgroundColor: "#C71A06", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#C71A06", shadowOpacity: 0.14, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   pressed: { opacity: 0.82 },
   disabled: { opacity: 0.55 },
-  analyzeIcon: { color: "#F6EAE5", fontSize: 17, fontWeight: "900" },
+  analyzeIcon: { color: "#F7F7F7", fontSize: 17, fontWeight: "900" },
   analyzeText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", flex: 1, textAlign: "center" },
   analyzeArrow: { color: "#FFFFFF", fontSize: 20, fontWeight: "800" },
-  secureNote: { textAlign: "center", color: "#91A0AD", fontSize: 9, marginTop: -10 },
-  resultCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5E5E2", borderRadius: 19, padding: 16, gap: 11, shadowColor: "#202020", shadowOpacity: 0.025, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
+  secureNote: { textAlign: "center", color: "#AEABA8", fontSize: 9, marginTop: -10 },
+  resultCard: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 19, padding: 16, gap: 11, shadowColor: "#000000", shadowOpacity: 0.20, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   resultTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
-  resultEyebrow: { color: "#5B3733", fontSize: 9, fontWeight: "900", letterSpacing: 1.7 },
-  resultTitle: { color: "#171C20", fontSize: 25, fontWeight: "900", textTransform: "capitalize", marginTop: 3, letterSpacing: -0.6 },
+  resultEyebrow: { color: "#C38F6C", fontSize: 9, fontWeight: "900", letterSpacing: 1.7 },
+  resultTitle: { color: "#F7F7F7", fontSize: 25, fontWeight: "900", textTransform: "capitalize", marginTop: 3, letterSpacing: -0.6 },
   aiPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 6 },
-  aiOnline: { backgroundColor: "#E5F5EE" },
-  aiLocal: { backgroundColor: "#EDF1F5" },
+  aiOnline: { backgroundColor: "#172018" },
+  aiLocal: { backgroundColor: "#1A1A1A" },
   aiDot: { width: 6, height: 6, borderRadius: 4 },
-  aiDotOnline: { backgroundColor: "#168653" },
-  aiDotLocal: { backgroundColor: "#768493" },
+  aiDotOnline: { backgroundColor: "#C38F6C" },
+  aiDotLocal: { backgroundColor: "#AEABA8" },
   aiPillText: { fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
-  aiTextOnline: { color: "#16734E" },
-  aiTextLocal: { color: "#647687" },
-  sourceText: { color: "#8996A3", fontSize: 10 },
-  summary: { color: "#40596A", fontSize: 13, lineHeight: 19 },
-  resultDivider: { height: 1, backgroundColor: "#EAF0F0" },
-  guidanceTitle: { color: "#1B3547", fontSize: 14, fontWeight: "900", letterSpacing: -0.2 },
+  aiTextOnline: { color: "#C38F6C" },
+  aiTextLocal: { color: "#AEABA8" },
+  sourceText: { color: "#AEABA8", fontSize: 10 },
+  summary: { color: "#F7F7F7", fontSize: 13, lineHeight: 19 },
+  resultDivider: { height: 1, backgroundColor: "#2A2A2A" },
+  guidanceTitle: { color: "#F7F7F7", fontSize: 14, fontWeight: "900", letterSpacing: -0.2 },
   instructionRow: { flexDirection: "row", alignItems: "flex-start", gap: 9 },
-  stepNumber: { width: 27, height: 27, borderRadius: 9, backgroundColor: "#F2ECE9", alignItems: "center", justifyContent: "center" },
-  stepNumberText: { color: "#5B3733", fontSize: 11, fontWeight: "900" },
-  instruction: { flex: 1, color: "#3E5260", fontSize: 13, lineHeight: 20, paddingTop: 2 },
-  safetyNotice: { color: "#986A20", backgroundColor: "#FFF8E8", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
+  stepNumber: { width: 27, height: 27, borderRadius: 9, backgroundColor: "#211412", alignItems: "center", justifyContent: "center" },
+  stepNumberText: { color: "#C38F6C", fontSize: 11, fontWeight: "900" },
+  instruction: { flex: 1, color: "#F7F7F7", fontSize: 13, lineHeight: 20, paddingTop: 2 },
+  safetyNotice: { color: "#C38F6C", backgroundColor: "#1B1715", borderWidth: 1, borderColor: "#5B3733", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
   toolsRow: { flexDirection: "row", gap: 9 },
-  toolButton: { flex: 1, minHeight: 58, backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E7E1D8", paddingVertical: 9, alignItems: "center", justifyContent: "center", gap: 3 },
-  toolButtonSelected: { backgroundColor: "#F4EEEB", borderColor: "#D7C5BF" },
+  toolButton: { flex: 1, minHeight: 58, backgroundColor: "#121212", borderRadius: 15, borderWidth: 1, borderColor: "#2C2C2C", paddingVertical: 9, alignItems: "center", justifyContent: "center", gap: 3 },
+  toolButtonSelected: { backgroundColor: "#211412", borderColor: "#C71A06" },
   toolEmoji: { fontSize: 17 },
-  toolLabel: { color: "#526270", fontSize: 10, fontWeight: "900" },
-  toolLabelSelected: { color: "#5B3733" },
-  mapCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E1D8", borderRadius: 19, padding: 12, gap: 9 },
+  toolLabel: { color: "#AEABA8", fontSize: 10, fontWeight: "900" },
+  toolLabelSelected: { color: "#F7F7F7" },
+  mapCard: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 19, padding: 12, gap: 9 },
   map: { width: "100%", height: 230, borderRadius: 11 },
-  mapNote: { color: "#8C734F", fontSize: 9, lineHeight: 14 },
-  chatThread: { backgroundColor: "#FFFFFF", borderRadius: 19, borderWidth: 1, borderColor: "#E5E5E2", padding: 14, gap: 9 },
+  mapNote: { color: "#C38F6C", fontSize: 9, lineHeight: 14 },
+  chatThread: { backgroundColor: "#111111", borderRadius: 19, borderWidth: 1, borderColor: "#2C2C2C", padding: 14, gap: 9 },
   chatBubble: { maxWidth: "92%", padding: 11, borderRadius: 12 },
-  chatUser: { alignSelf: "flex-end", backgroundColor: "#202A31" },
-  chatAssistant: { alignSelf: "flex-start", backgroundColor: "#F1F1EF" },
+  chatUser: { alignSelf: "flex-end", backgroundColor: "#5B3733" },
+  chatAssistant: { alignSelf: "flex-start", backgroundColor: "#1A1A1A" },
   chatBubbleText: { fontSize: 13, lineHeight: 20 },
-  chatUserText: { color: "#FFFFFF" },
-  chatAssistantText: { color: "#2D4656" },
-  followUp: { color: "#4D403D", backgroundColor: "#F3EEEB", padding: 12, borderRadius: 12, fontSize: 12, lineHeight: 18, overflow: "hidden" },
-  facilityCard: { backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E2E8EE", padding: 13, gap: 10 },
-  facilityHint: { color: "#8996A3", fontSize: 10, lineHeight: 15 },
-  facilityRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderColor: "#EDF1F3", paddingTop: 10, gap: 9 },
+  chatUserText: { color: "#F7F7F7" },
+  chatAssistantText: { color: "#F7F7F7" },
+  followUp: { color: "#F7F7F7", backgroundColor: "#1B1716", borderWidth: 1, borderColor: "#5B3733", padding: 12, borderRadius: 12, fontSize: 12, lineHeight: 18, overflow: "hidden" },
+  facilityCard: { backgroundColor: "#111111", borderRadius: 15, borderWidth: 1, borderColor: "#2C2C2C", padding: 13, gap: 10 },
+  facilityHint: { color: "#AEABA8", fontSize: 10, lineHeight: 15 },
+  facilityRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderColor: "#2A2A2A", paddingTop: 10, gap: 9 },
   facilityCopy: { flex: 1, gap: 3 },
-  facilityName: { color: "#243E50", fontSize: 12, fontWeight: "900" },
-  facilityMeta: { color: "#758696", fontSize: 10, textTransform: "capitalize" },
-  verifiedText: { color: "#168653", fontSize: 9, fontWeight: "800" },
-  unverifiedText: { color: "#A16B1C", fontSize: 9, fontWeight: "800" },
-  callFacilityButton: { backgroundColor: "#FFF2E8", borderRadius: 9, paddingHorizontal: 11, paddingVertical: 9 },
-  callFacilityText: { color: "#9A5424", fontSize: 10, fontWeight: "900" },
-  routeButton: { backgroundColor: "#EAF4F1", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
-  routeButtonText: { color: "#14715F", fontSize: 10, fontWeight: "900" },
-  modalShade: { flex: 1, backgroundColor: "rgba(10,25,35,0.45)", justifyContent: "center", padding: 22 },
-  weatherModal: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 18, gap: 14 },
+  facilityName: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
+  facilityMeta: { color: "#AEABA8", fontSize: 10, textTransform: "capitalize" },
+  verifiedText: { color: "#C38F6C", fontSize: 9, fontWeight: "800" },
+  unverifiedText: { color: "#C38F6C", fontSize: 9, fontWeight: "800" },
+  callFacilityButton: { backgroundColor: "#211412", borderRadius: 9, paddingHorizontal: 11, paddingVertical: 9 },
+  callFacilityText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
+  routeButton: { backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#5B3733", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
+  routeButtonText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
+  modalShade: { flex: 1, backgroundColor: "rgba(0,0,0,0.78)", justifyContent: "center", padding: 22 },
+  weatherModal: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 18, padding: 18, gap: 14 },
   weatherModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  weatherTitle: { color: "#173849", fontSize: 18, fontWeight: "900" },
-  weatherSub: { color: "#82919E", fontSize: 10, lineHeight: 15 },
-  weatherClose: { width: 32, height: 32, borderRadius: 10, backgroundColor: "#F0F3F5", alignItems: "center", justifyContent: "center" },
-  weatherCloseText: { color: "#536777", fontSize: 16 },
-  weatherCondition: { color: "#556B7B", fontSize: 13, fontWeight: "800", textAlign: "center" },
-  weatherTemperature: { color: "#173849", fontSize: 42, fontWeight: "900", textAlign: "center" },
+  weatherTitle: { color: "#F7F7F7", fontSize: 18, fontWeight: "900" },
+  weatherSub: { color: "#AEABA8", fontSize: 10, lineHeight: 15 },
+  weatherClose: { width: 32, height: 32, borderRadius: 10, backgroundColor: "#222222", alignItems: "center", justifyContent: "center" },
+  weatherCloseText: { color: "#F7F7F7", fontSize: 16 },
+  weatherCondition: { color: "#AEABA8", fontSize: 13, fontWeight: "800", textAlign: "center" },
+  weatherTemperature: { color: "#F7F7F7", fontSize: 42, fontWeight: "900", textAlign: "center" },
   weatherMetrics: { flexDirection: "row", gap: 8, justifyContent: "space-between" },
-  weatherMetric: { flex: 1, backgroundColor: "#F2F6F7", borderRadius: 10, padding: 10, alignItems: "center", gap: 4 },
-  weatherMetricValue: { color: "#1C6870", fontSize: 13, fontWeight: "900" },
-  weatherMetricLabel: { color: "#80909C", fontSize: 9 },
-  weatherDisclaimer: { color: "#8C734F", fontSize: 9, lineHeight: 14 },
-  weatherDone: { backgroundColor: "#147A6A", borderRadius: 10, padding: 12, alignItems: "center" },
-  weatherDoneText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
-  offlineCard: { backgroundColor: "#F1F2EF", borderRadius: 19, padding: 14, gap: 10, borderWidth: 1, borderColor: "#E3E2DA" },
+  weatherMetric: { flex: 1, backgroundColor: "#1A1A1A", borderRadius: 10, padding: 10, alignItems: "center", gap: 4 },
+  weatherMetricValue: { color: "#C38F6C", fontSize: 13, fontWeight: "900" },
+  weatherMetricLabel: { color: "#AEABA8", fontSize: 9 },
+  weatherDisclaimer: { color: "#AEABA8", fontSize: 9, lineHeight: 14 },
+  weatherDone: { backgroundColor: "#C71A06", borderRadius: 10, padding: 12, alignItems: "center" },
+  weatherDoneText: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
+  offlineCard: { backgroundColor: "#111111", borderRadius: 19, padding: 14, gap: 10, borderWidth: 1, borderColor: "#2C2C2C" },
   offlineHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
-  offlineIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: "#DCE9ED", alignItems: "center", justifyContent: "center" },
-  offlineIconText: { color: "#285B68", fontSize: 22 },
+  offlineIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: "#211412", alignItems: "center", justifyContent: "center" },
+  offlineIconText: { color: "#C38F6C", fontSize: 22 },
   offlineCopy: { flex: 1, gap: 3 },
-  offlineTitle: { color: "#234455", fontWeight: "900", fontSize: 13 },
-  offlineSub: { color: "#7A8D99", fontSize: 10 },
-  offlineButton: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#CCD9E0", borderRadius: 10, padding: 12, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 },
-  offlineButtonText: { color: "#31596A", fontSize: 11, fontWeight: "900" },
-  offlineButtonArrow: { color: "#147A6A", fontSize: 16, fontWeight: "900" },
-  offlineStatus: { color: "#667B89", fontSize: 10 },
-  offlineWarning: { color: "#8A7450", fontSize: 9, lineHeight: 14 },
+  offlineTitle: { color: "#F7F7F7", fontWeight: "900", fontSize: 13 },
+  offlineSub: { color: "#AEABA8", fontSize: 10 },
+  offlineButton: { backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#3A302D", borderRadius: 10, padding: 12, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 },
+  offlineButtonText: { color: "#F7F7F7", fontSize: 11, fontWeight: "900" },
+  offlineButtonArrow: { color: "#C71A06", fontSize: 16, fontWeight: "900" },
+  offlineStatus: { color: "#AEABA8", fontSize: 10 },
+  offlineWarning: { color: "#C38F6C", fontSize: 9, lineHeight: 14 },
   footer: { paddingTop: 3, gap: 5, alignItems: "center" },
-  footerStatus: { color: "#496273", fontSize: 11, fontWeight: "800" },
-  footerApi: { color: "#5B6B64", fontSize: 9, fontWeight: "800", textAlign: "center" },
-  recheckButton: { paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "#E8F4F1", borderRadius: 8 },
-  recheckText: { color: "#14715F", fontSize: 10, fontWeight: "800" },
-  diagnosticWarning: { color: "#9B3E2D", backgroundColor: "#FFF0EB", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
-  connectionBad: { backgroundColor: "#C24135" },
+  footerStatus: { color: "#F7F7F7", fontSize: 11, fontWeight: "800" },
+  footerApi: { color: "#C38F6C", fontSize: 9, fontWeight: "800", textAlign: "center" },
+  recheckButton: { paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "#1A1A1A", borderRadius: 8 },
+  recheckText: { color: "#C38F6C", fontSize: 10, fontWeight: "800" },
+  diagnosticWarning: { color: "#F1B2A7", backgroundColor: "#241311", borderWidth: 1, borderColor: "#5B211B", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
+  connectionBad: { backgroundColor: "#C71A06" },
   connectionChecking: { backgroundColor: "#D69E2E" },
-  disclaimer: { color: "#9AA5AE", fontSize: 9, textAlign: "center", lineHeight: 14 },
+  disclaimer: { color: "#AEABA8", fontSize: 9, textAlign: "center", lineHeight: 14 },
 });
