@@ -223,3 +223,6 @@ __marimo__/
 .venv/
 __pycache__/
 *.db
+# Cloudflare local secrets and generated state
+.dev.vars
+.wrangler/
