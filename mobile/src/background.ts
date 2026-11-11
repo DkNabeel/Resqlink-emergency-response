@@ -295,7 +295,7 @@ export async function startBackgroundMonitoring(): Promise<{
       foregroundService: {
         notificationTitle: "ResQLink location protection is active",
         notificationBody: "Refreshing nearby emergency information when the device allows.",
-        notificationColor: "#147A6A",
+        notificationColor: "#D13B2F",
       },
     });
   }
