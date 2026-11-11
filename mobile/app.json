@@ -10,24 +10,43 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.dk.resqlink",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "ResQLink uses your location to find relevant emergency facilities and nearby public safety alerts."
+        "NSLocationWhenInUseUsageDescription": "ResQLink uses your location to find relevant emergency facilities and nearby public safety alerts.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow ResQLink to refresh nearby emergency information and alert you about government warnings while the app is in the background.",
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
       "package": "com.dk.resqlink",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow ResQLink to use your location to provide emergency assistance."
+          "locationWhenInUsePermission": "Allow ResQLink to use your location for emergency assistance.",
+          "locationAlwaysAndWhenInUsePermission": "Allow ResQLink to refresh nearby emergency information and alert you about government warnings in the background.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
-      "expo-sqlite"
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "resqlink-emergency-alerts"
+        }
+      ],
+      "expo-sqlite",
+      "expo-task-manager"
     ]
   }
 }
