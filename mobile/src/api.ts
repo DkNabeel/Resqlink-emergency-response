@@ -43,8 +43,6 @@ export type EmergencyResult = {
     key_details?: string[];
     message?: string;
   };
-  // Legacy aliases returned by the backend for older installed app builds.
-  gemini_status?: string;
   [key: string]: unknown;
 };
 
