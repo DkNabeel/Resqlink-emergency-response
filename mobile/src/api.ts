@@ -94,8 +94,8 @@ export async function downloadOfflinePackage(
 export async function sendEmergency(input: {
   message: string;
   language: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
   radius_km: number;
   include_weather: boolean;
   use_gemini: boolean;
@@ -110,6 +110,33 @@ export async function sendEmergency(input: {
   }
   return (await response.json()) as EmergencyResult;
 }
+
+const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
+  en: {
+    fire: ["Leave immediately through the nearest safe exit.", "Stay low under smoke and do not use elevators.", "Do not re-enter; call 112 from a safe place."],
+    flood: ["Move to higher ground immediately.", "Never walk or drive through floodwater.", "Stay away from electrical lines and follow official evacuation instructions."],
+    earthquake: ["Drop, cover and hold on until shaking stops.", "Stay away from windows and heavy objects; do not use elevators.", "After shaking, leave damaged buildings carefully and expect aftershocks."],
+    medical: ["Call 112 and request medical help.", "Apply firm direct pressure to severe external bleeding.", "Do not move a seriously injured person unless there is immediate danger."],
+    gas_leak: ["Leave the area immediately.", "Do not operate switches, appliances, flames or vehicles near the suspected leak.", "From a safe location call 112; do not re-enter until cleared."],
+    unknown: ["Move away from immediate danger if possible.", "Call 112 in India and give your exact location.", "Follow official local responder instructions."],
+  },
+  hi: {
+    fire: ["निकटतम सुरक्षित निकास से तुरंत बाहर निकलें।", "धुएँ में नीचे झुककर चलें; लिफ्ट का उपयोग न करें।", "वापस अंदर न जाएँ; सुरक्षित स्थान से 112 पर कॉल करें।"],
+    flood: ["तुरंत ऊँचे स्थान पर जाएँ।", "बाढ़ के पानी में पैदल या वाहन से न जाएँ।", "बिजली की तारों से दूर रहें और आधिकारिक निकासी निर्देश मानें।"],
+    earthquake: ["झटके रुकने तक नीचे झुकें, ढकें और पकड़े रहें।", "खिड़कियों और भारी वस्तुओं से दूर रहें; लिफ्ट न लें।", "झटके रुकने पर क्षतिग्रस्त इमारत से सावधानी से बाहर निकलें।"],
+    medical: ["112 पर कॉल करके चिकित्सा सहायता माँगें।", "अधिक बाहरी रक्तस्राव पर साफ कपड़े से सीधा दबाव दें।", "तत्काल खतरा न हो तो गंभीर घायल को न हिलाएँ।"],
+    gas_leak: ["तुरंत उस स्थान से बाहर निकलें।", "स्विच, बिजली के उपकरण या आग का उपयोग न करें।", "सुरक्षित स्थान से 112 पर कॉल करें; अनुमति मिलने तक वापस न जाएँ।"],
+    unknown: ["संभव हो तो तत्काल खतरे से दूर जाएँ।", "भारत में 112 पर कॉल करके सटीक स्थान बताएँ।", "स्थानीय अधिकारियों के निर्देश मानें।"],
+  },
+  kn: {
+    fire: ["ಹತ್ತಿರದ ಸುರಕ್ಷಿತ ನಿರ್ಗಮನದ ಮೂಲಕ ತಕ್ಷಣ ಹೊರಬನ್ನಿ.", "ಹೊಗೆ ಇದ್ದರೆ ಕೆಳಮಟ್ಟದಲ್ಲಿ ಚಲಿಸಿ; ಲಿಫ್ಟ್ ಬಳಸಬೇಡಿ.", "ಮತ್ತೆ ಒಳಗೆ ಹೋಗಬೇಡಿ; ಸುರಕ್ಷಿತ ಸ್ಥಳದಿಂದ 112ಕ್ಕೆ ಕರೆಮಾಡಿ."],
+    flood: ["ತಕ್ಷಣ ಎತ್ತರದ ಪ್ರದೇಶಕ್ಕೆ ತೆರಳಿ.", "ಪ್ರವಾಹದ ನೀರಿನಲ್ಲಿ ನಡೆಯಬೇಡಿ ಅಥವಾ ವಾಹನ ಚಲಾಯಿಸಬೇಡಿ.", "ವಿದ್ಯುತ್ ತಂತಿಗಳಿಂದ ದೂರವಿದ್ದು ಅಧಿಕೃತ ಸೂಚನೆ ಪಾಲಿಸಿ."],
+    earthquake: ["ಕಂಪನ ನಿಲ್ಲುವವರೆಗೆ ಕೆಳಗೆ ಬಾಗಿ, ಆಶ್ರಯ ಪಡೆದು ಹಿಡಿದುಕೊಳ್ಳಿ.", "ಕಿಟಕಿ ಮತ್ತು ಭಾರವಾದ ವಸ್ತುಗಳಿಂದ ದೂರವಿರಿ; ಲಿಫ್ಟ್ ಬಳಸಬೇಡಿ.", "ಕಂಪನ ನಿಂತ ನಂತರ ಹಾನಿಗೊಂಡ ಕಟ್ಟಡದಿಂದ ಎಚ್ಚರಿಕೆಯಿಂದ ಹೊರಬನ್ನಿ."],
+    medical: ["ವೈದ್ಯಕೀಯ ಸಹಾಯಕ್ಕಾಗಿ 112ಕ್ಕೆ ಕರೆಮಾಡಿ.", "ತೀವ್ರ ರಕ್ತಸ್ರಾವಕ್ಕೆ ಸ್ವಚ್ಛ ಬಟ್ಟೆಯಿಂದ ನೇರ ಒತ್ತಡ ನೀಡಿ.", "ತಕ್ಷಣದ ಅಪಾಯವಿಲ್ಲದಿದ್ದರೆ ಗಂಭೀರ ಗಾಯಾಳುವನ್ನು ಕದಲಿಸಬೇಡಿ."],
+    gas_leak: ["ತಕ್ಷಣ ಆ ಪ್ರದೇಶದಿಂದ ಹೊರಬನ್ನಿ.", "ಸ್ವಿಚ್, ವಿದ್ಯುತ್ ಉಪಕರಣ ಅಥವಾ ಬೆಂಕಿ ಬಳಸಬೇಡಿ.", "ಸುರಕ್ಷಿತ ಸ್ಥಳದಿಂದ 112ಕ್ಕೆ ಕರೆಮಾಡಿ; ಅನುಮತಿ ಸಿಗುವವರೆಗೆ ಹಿಂದಿರುಗಬೇಡಿ."],
+    unknown: ["ಸಾಧ್ಯವಾದರೆ ತಕ್ಷಣದ ಅಪಾಯದಿಂದ ದೂರವಿರಿ.", "ಭಾರತದಲ್ಲಿ 112ಕ್ಕೆ ಕರೆಮಾಡಿ ನಿಖರ ಸ್ಥಳ ತಿಳಿಸಿ.", "ಸ್ಥಳೀಯ ಅಧಿಕಾರಿಗಳ ಸೂಚನೆಗಳನ್ನು ಪಾಲಿಸಿ."],
+  },
+};
 
 const OFFLINE_TERMS: Record<string, string[]> = {
   fire: ["fire", "smoke", "आग", "धुआँ", "ಬೆಂಕಿ", "ಹೊಗೆ"],
@@ -135,10 +162,13 @@ export function getOfflineGuidance(
     Object.entries(OFFLINE_TERMS).find(([, terms]) =>
       terms.some((term) => normalized.includes(term.toLocaleLowerCase())),
     )?.[0] ?? "unknown";
+  const normalizedLanguage = language in BUILT_IN_OFFLINE_GUIDANCE ? language : "en";
   const instructions =
     cachedPackage?.guidance_catalog?.[category]?.instructions ??
+    BUILT_IN_OFFLINE_GUIDANCE[normalizedLanguage]?.[category] ??
     cachedPackage?.guidance_catalog?.unknown?.instructions ??
-    [];
+    BUILT_IN_OFFLINE_GUIDANCE[normalizedLanguage]?.unknown ??
+    BUILT_IN_OFFLINE_GUIDANCE.en.unknown;
   const fallbackNotice = {
     en: "Offline keyword guidance only. Call 112 in India and follow official responders.",
     hi: "यह केवल ऑफलाइन सामान्य मार्गदर्शन है। भारत में 112 पर कॉल करें और आधिकारिक निर्देश मानें।",

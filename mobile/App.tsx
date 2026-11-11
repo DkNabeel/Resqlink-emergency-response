@@ -127,12 +127,20 @@ export default function App() {
     setBusy(true);
     setResult(null);
     try {
-      const point = coordinates ?? (await obtainLocation());
+      let point = coordinates;
+      if (!point) {
+        try {
+          point = await obtainLocation();
+        } catch {
+          // GPS is optional for text emergency analysis. Continue without a
+          // location instead of blocking the emergency request.
+          setLocationStatus("Location unavailable. Sending the emergency text without coordinates.");
+        }
+      }
       const response = await sendEmergency({
         message: message.trim(),
         language,
-        latitude: point.latitude,
-        longitude: point.longitude,
+        ...(point ? { latitude: point.latitude, longitude: point.longitude } : {}),
         radius_km: 10,
         include_weather: false,
         use_gemini: true,
@@ -143,7 +151,7 @@ export default function App() {
       const cached = offlinePackage ?? (await getLatestOfflinePackage().then((x) => x?.payload ?? null).catch(() => null));
       setResult(getOfflineGuidance(message, language, cached));
       setStatus(
-        "Backend unavailable. Showing saved local guidance only. Call 112 for emergency response.",
+        "Backend unavailable. Showing offline guidance only. Call 112 for emergency response.",
       );
     } finally {
       setBusy(false);
