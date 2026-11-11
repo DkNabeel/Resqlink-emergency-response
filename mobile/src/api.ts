@@ -30,6 +30,8 @@ export type EmergencyResult = {
   emergency_type?: string;
   guidance?: string[];
   safety_notice?: string;
+  nearby_facilities?: unknown[];
+  weather_context?: { status?: string; [key: string]: unknown };
   ai_provider?: string;
   ai_status?: string;
   ai_analysis?: {
