@@ -43,15 +43,34 @@ Run from the repository root:
 uv sync
 ```
 
-## 4. Add the Groq key
+## 4. Configure API settings in one local file
+
+All local Worker settings are kept together in the repository-root `.dev.vars` file. You do not need one file per API.
+
+Create your local file from the safe template:
+
+```powershell
+Copy-Item .dev.vars.example .dev.vars
+notepad .dev.vars
+```
+
+Add your Groq key to the `GROQ_API_KEY=` line and save. Do not add quotes unless they are part of the key. The root `.dev.vars` file is gitignored and must never be committed or shared.
+
+**API key requirements in this Cloudflare demo:**
+
+- **Groq:** requires `GROQ_API_KEY`. This is the only API credential currently required by the Worker for AI classification.
+- **Open-Meteo weather:** no API key required.
+- **OpenStreetMap Overpass facility discovery:** no API key required.
+- **NDMA SACHET:** no API key, but background syncing is disabled in this stateless demo.
+- **OpenRouteService** and `FACILITY_ADMIN_TOKEN`: belong to optional features in the original full backend and are not used by this Cloudflare Worker yet. Do not create or add those keys now.
+
+For local testing, Wrangler reads `.dev.vars`. For the deployed Worker, add the Groq key separately as a Cloudflare secret (local files are not uploaded):
 
 ```powershell
 uv run pywrangler secret put GROQ_API_KEY
 ```
 
-Paste the Groq key when prompted. It is stored as a Cloudflare Worker secret; do not put it in the mobile app or commit it.
-
-If you do not add a key, local multilingual keyword detection still works, but Groq AI will show as not configured.
+Paste the same Groq key when prompted. Never put it in the mobile app or commit it.
 
 ## 5. Test locally first
 
