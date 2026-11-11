@@ -31,13 +31,13 @@ const LANGUAGES: { code: Language; label: string }[] = [
   { code: "kn", label: "ಕನ್ನಡ" },
 ];
 
-const QUICK_REPORTS = [
-  { emoji: "🔥", label: "Fire", message: "There is a fire and smoke nearby. I need emergency assistance." },
-  { emoji: "🌊", label: "Flood", message: "Floodwater is rising in my area. I need emergency assistance." },
-  { emoji: "🚑", label: "Medical", message: "Someone is seriously injured and needs medical assistance." },
-  { emoji: "🚗", label: "Accident", message: "There has been a road accident and people may be injured." },
-  { emoji: "🏚️", label: "Earthquake", message: "An earthquake is happening and buildings may be damaged." },
-  { emoji: "⚠️", label: "Gas leak", message: "I can smell gas in the building. There may be a gas leak." },
+const QUICK_REPORTS: { emoji: string; label: string; messages: Record<Language, string> }[] = [
+  { emoji: "🔥", label: "Fire", messages: { en: "There is a fire and smoke nearby. I need emergency assistance.", hi: "पास में आग और धुआँ है। मुझे आपातकालीन सहायता चाहिए।", kn: "ಹತ್ತಿರದಲ್ಲಿ ಬೆಂಕಿ ಮತ್ತು ಹೊಗೆ ಇದೆ. ನನಗೆ ತುರ್ತು ಸಹಾಯ ಬೇಕು." } },
+  { emoji: "🌊", label: "Flood", messages: { en: "Floodwater is rising in my area. I need emergency assistance.", hi: "मेरे इलाके में बाढ़ का पानी बढ़ रहा है। मुझे आपातकालीन सहायता चाहिए।", kn: "ನನ್ನ ಪ್ರದೇಶದಲ್ಲಿ ಪ್ರವಾಹದ ನೀರು ಏರುತ್ತಿದೆ. ನನಗೆ ತುರ್ತು ಸಹಾಯ ಬೇಕು." } },
+  { emoji: "🚑", label: "Medical", messages: { en: "Someone is seriously injured and needs medical assistance.", hi: "कोई गंभीर रूप से घायल है और उसे चिकित्सा सहायता चाहिए।", kn: "ಯಾರೋ ಗಂಭೀರವಾಗಿ ಗಾಯಗೊಂಡಿದ್ದಾರೆ. ಅವರಿಗೆ ವೈದ್ಯಕೀಯ ಸಹಾಯ ಬೇಕು." } },
+  { emoji: "🚗", label: "Accident", messages: { en: "There has been a road accident and people may be injured.", hi: "सड़क दुर्घटना हुई है और लोग घायल हो सकते हैं।", kn: "ರಸ್ತೆ ಅಪಘಾತ ಸಂಭವಿಸಿದೆ ಮತ್ತು ಕೆಲವರು ಗಾಯಗೊಂಡಿರಬಹುದು." } },
+  { emoji: "🏚️", label: "Earthquake", messages: { en: "An earthquake is happening and buildings may be damaged.", hi: "भूकंप आ रहा है और इमारतों को नुकसान हो सकता है।", kn: "ಭೂಕಂಪ ಸಂಭವಿಸುತ್ತಿದೆ ಮತ್ತು ಕಟ್ಟಡಗಳಿಗೆ ಹಾನಿಯಾಗಿರಬಹುದು." } },
+  { emoji: "⚠️", label: "Gas leak", messages: { en: "I can smell gas in the building. There may be a gas leak.", hi: "इमारत में गैस की गंध आ रही है। गैस रिसाव हो सकता है।", kn: "ಕಟ್ಟಡದಲ್ಲಿ ಅನಿಲದ ವಾಸನೆ ಬರುತ್ತಿದೆ. ಅನಿಲ ಸೋರಿಕೆ ಇರಬಹುದು." } },
 ];
 
 const COPY: Record<Language, { eyebrow: string; title: string; subtitle: string; report: string; placeholder: string; analyze: string; location: string; getLocation: string; offline: string; saveOffline: string }> = {
@@ -260,7 +260,7 @@ export default function App() {
           {QUICK_REPORTS.map((item) => (
             <Pressable
               key={item.label}
-              onPress={() => { setMessage(item.message); setSelectedPrompt(item.label); setResult(null); }}
+              onPress={() => { setMessage(item.messages[language]); setSelectedPrompt(item.label); setResult(null); }}
               style={[styles.quickCard, selectedPrompt === item.label && styles.quickSelected]}
             >
               <Text style={styles.quickEmoji}>{item.emoji}</Text>
