@@ -837,7 +837,7 @@ def _etag_matches(if_none_match, current_etag):
 
 
 @app.get("/offline/package")
-def create_offline_package(
+async def create_offline_package(
     response: Response,
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
@@ -868,6 +868,20 @@ def create_offline_package(
                 "distance_km": round(distance, 2),
             })
     nearby_verified_facilities.sort(key=lambda item: item["distance_km"])
+
+    # Include nearby OpenStreetMap candidates in the package so the phone can
+    # save them locally. They remain explicitly unverified and are never
+    # promoted to verified facilities automatically.
+    nearby_discovered_facilities = []
+    facility_discovery_status = "unavailable"
+    try:
+        discovery = await discover_facilities(
+            latitude, longitude, min(20, radius_km)
+        )
+        nearby_discovered_facilities = discovery.get("items", [])
+        facility_discovery_status = discovery.get("cache_status", "available")
+    except Exception as exc:
+        logger.warning("Facility discovery unavailable for offline package: %s", type(exc).__name__)
 
     local_alerts = []
     unverified_alerts = []
@@ -922,12 +936,15 @@ def create_offline_package(
         "emergency_contact": EMERGENCY_CONTACT_INDIA,
         "guidance_catalog": guidance_catalog,
         "nearby_verified_facilities": nearby_verified_facilities,
+        "nearby_discovered_facilities": nearby_discovered_facilities,
+        "facility_discovery_status": facility_discovery_status,
         "location_matched_official_alerts": local_alerts,
         "unverified_location_alerts": unverified_alerts,
         "offline_capabilities": {
             "multilingual_safety_guides": True,
             "emergency_contact_number": True,
             "verified_facility_directory": True,
+            "unverified_osm_facility_candidates": True,
             "downloaded_official_alert_snapshot": True,
             "map_tiles_included": False,
             "live_alert_updates": False,
@@ -938,7 +955,7 @@ def create_offline_package(
         "important": [
             "This is a snapshot generated at the stated time; new alerts cannot arrive while offline.",
             "Check each alert's own expiry and status; the package has no guaranteed validity period.",
-            "Only facilities marked verified are included. Verification depends on the source and note recorded by the project administrator.",
+            "Verified facilities and separately labelled unverified OpenStreetMap candidates are included. Check candidate details before relying on them.",
             "Map tiles, live routing, weather and traffic are not bundled.",
             "Never treat absence of an alert or facility as proof that an area is safe.",
         ],
