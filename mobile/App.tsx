@@ -399,7 +399,10 @@ export default function App() {
         setChatHistory((current) => [
           ...current,
           { role: "user" as const, content: submittedMessage },
-          ...(response.reply ? [{ role: "assistant" as const, content: response.reply }] : []),
+          ...(response.reply ? [{
+            role: "assistant" as const,
+            content: response.reply + (response.follow_up_question ? "\nFollow-up: " + response.follow_up_question : ""),
+          }] : []),
         ].slice(-10));
         setStatus("Emergency response received");
       } else {
@@ -532,6 +535,18 @@ export default function App() {
   function chooseLanguage(code: Language) {
     setLanguage(code);
     setResult(null);
+  }
+
+  function startNewIncident() {
+    setChatHistory([]);
+    setResult(null);
+    setMessage("");
+    setSelectedPrompt("");
+    setRouteEstimate(null);
+    setRouteEstimateError("");
+    setRoutePath([]);
+    setRouteDestination(null);
+    setStatus("New incident started · previous chat context cleared");
   }
 
   const instructions = result?.guidance ?? [];
@@ -676,7 +691,12 @@ export default function App() {
 
         {chatHistory.length > 0 ? (
           <View style={styles.chatThread}>
-            <Text style={styles.sectionTitle}>Latest emergency update</Text>
+            <View style={styles.chatHeader}>
+              <Text style={styles.sectionTitle}>Latest emergency update</Text>
+              <Pressable onPress={startNewIncident} style={styles.newIncidentButton}>
+                <Text style={styles.newIncidentText}>New incident</Text>
+              </Pressable>
+            </View>
             {chatHistory.slice(-4).map((item, index) => (
               <View key={String(index)} style={[styles.chatBubble, item.role === "user" ? styles.chatUser : styles.chatAssistant]}>
                 <Text style={[styles.chatBubbleText, item.role === "user" ? styles.chatUserText : styles.chatAssistantText]}>{item.content}</Text>
@@ -1097,6 +1117,9 @@ const styles = StyleSheet.create({
   map: { width: "100%", height: 230, borderRadius: 11 },
   mapNote: { color: "#C38F6C", fontSize: 9, lineHeight: 14 },
   chatThread: { backgroundColor: "#111111", borderRadius: 19, borderWidth: 1, borderColor: "#2C2C2C", padding: 14, gap: 9 },
+  chatHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  newIncidentButton: { borderWidth: 1, borderColor: "#3A302D", backgroundColor: "#1A1A1A", borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7 },
+  newIncidentText: { color: "#D13B2F", fontSize: 10, fontWeight: "900" },
   chatBubble: { maxWidth: "92%", padding: 11, borderRadius: 12 },
   chatUser: { alignSelf: "flex-end", backgroundColor: "#5B3733" },
   chatAssistant: { alignSelf: "flex-start", backgroundColor: "#1A1A1A" },
