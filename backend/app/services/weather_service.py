@@ -157,7 +157,10 @@ async def _fetch_open_meteo(latitude, longitude, forecast_hours):
         "timezone": "auto",
     }
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(8.0, connect=4.0),
+            headers={"Accept-Encoding": "identity"},
+        ) as client:
             response = await client.get(OPEN_METEO_URL, params=params)
             response.raise_for_status()
             data = response.json()
