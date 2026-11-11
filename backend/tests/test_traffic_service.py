@@ -73,7 +73,7 @@ class OpenRouteServiceRequestTests(unittest.IsolatedAsyncioTestCase):
         call = client.post.await_args
         self.assertEqual(
             call.args[0],
-            "https://api.heigit.org/openrouteservice/v2/directions/driving-car",
+            "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson",
         )
         self.assertEqual(call.kwargs["headers"]["Authorization"], "test-secret")
         self.assertEqual(
