@@ -567,6 +567,7 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         package = response.json()
         self.assertEqual(package["package_type"], "resqlink_offline_emergency_package")
+        self.assertEqual(package["schema_version"], 2)
         self.assertEqual(package["language"], "hi")
         self.assertEqual(package["emergency_contact"]["number"], "112")
         self.assertIn("fire", package["guidance_catalog"])
@@ -605,11 +606,35 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         package = response.json()
         self.assertEqual(len(package["nearby_discovered_facilities"]), 1)
+        self.assertEqual(package["facility_discovery_status"], "available")
         self.assertEqual(
             package["nearby_discovered_facilities"][0]["verification_status"],
             "unverified",
         )
         self.assertTrue(package["offline_capabilities"]["unverified_osm_facility_candidates"])
+
+    def test_offline_package_marks_empty_discovery_without_claiming_facilities_saved(self):
+        with patch(
+            "app.main.discover_facilities",
+            new=AsyncMock(return_value={
+                "count": 0,
+                "items": [],
+                "cache_status": "live_empty",
+            }),
+        ):
+            response = self.client.get(
+                "/offline/package",
+                params={
+                    "latitude": 12.9716,
+                    "longitude": 77.5946,
+                    "language": "en",
+                    "radius_km": 5,
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        package = response.json()
+        self.assertEqual(package["facility_discovery_status"], "empty")
+        self.assertEqual(package["nearby_discovered_facilities"], [])
 
     def test_offline_package_supports_etag_and_only_changes_when_payload_changes(self):
         params = {
