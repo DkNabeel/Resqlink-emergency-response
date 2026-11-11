@@ -23,9 +23,11 @@ python -m uvicorn app.main:app --reload
 
 API documentation: http://127.0.0.1:8000/docs
 
-## Cloudflare demo deployment (current)
+## Cloudflare Free deployment (current)
 
-Follow [CLOUDFLARE_DEPLOY.md](CLOUDFLARE_DEPLOY.md) to deploy the existing Groq + FastAPI backend through Cloudflare Containers. This requires a Workers Paid plan and Docker Desktop.
+The `cloudflare-demo` branch uses Cloudflare Python Workers with FastAPI. It is designed for the Cloudflare Free plan and does not require Docker or Cloudflare Containers. Follow [CLOUDFLARE_DEPLOY.md](CLOUDFLARE_DEPLOY.md).
+
+The first free demo includes Groq classification, multilingual local fallback, curated emergency guidance, on-demand weather and the mobile offline-package endpoint. Server-side SQLite persistence, saved facilities/locations and SACHET background collection are not enabled in this stateless first demo.
 
 ## Legacy cloud deployment (Render)
 
@@ -170,4 +172,4 @@ GET /facilities/discover?latitude=12.97&longitude=77.59&radius_km=5 queries the 
 
 ## Mobile application
 
-See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. For the Cloudflare demo, set EXPO_PUBLIC_API_BASE_URL to the public workers.dev URL printed after deployment. Expo Go can load the app over its tunnel while API requests go to Cloudflare. The client does not include offline map tiles or push notification delivery.
+See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. For the Cloudflare Free demo, set EXPO_PUBLIC_API_BASE_URL to the public workers.dev URL printed after deployment. Expo Go can load the app over its tunnel while API requests go to Cloudflare. The client does not include offline map tiles or push notification delivery.
