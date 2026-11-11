@@ -714,6 +714,8 @@ export default function App() {
             <Text style={styles.sectionTitle}>Your current area</Text>
             <MapView
               style={styles.map}
+              userInterfaceStyle="dark"
+              tintColor="#C38F6C"
               initialRegion={{
                 latitude: coordinates.latitude,
                 longitude: coordinates.longitude,
@@ -729,7 +731,7 @@ export default function App() {
               showsUserLocation
               showsMyLocationButton
             >
-              <Marker coordinate={coordinates} title="Your location" pinColor="#147A6A" />
+              <Marker coordinate={coordinates} title="Your location" pinColor="#C71A06" />
               {facilities.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number").map((item, index) => (
                 <Marker
                   key={String(item.name ?? "facility") + "-" + index}
@@ -896,7 +898,7 @@ const styles = StyleSheet.create({
   permissionBody: { color: "#AEABA8", fontSize: 13, lineHeight: 20, textAlign: "center" },
   permissionMessage: { color: "#C38F6C", backgroundColor: "#1B1716", borderWidth: 1, borderColor: "#5B3733", borderRadius: 10, padding: 12, fontSize: 11, lineHeight: 17, textAlign: "center" },
   permissionButton: { backgroundColor: "#C71A06", borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, minWidth: "100%", alignItems: "center" },
-  permissionButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
+  permissionButtonText: { color: "#F7F7F7", fontSize: 13, fontWeight: "900" },
   permissionSettings: { padding: 10 },
   permissionSettingsText: { color: "#C38F6C", fontSize: 12, fontWeight: "800" },
   permissionFootnote: { color: "#AEABA8", fontSize: 10, lineHeight: 15, textAlign: "center" },
@@ -904,7 +906,7 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   logo: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#C71A06", alignItems: "center", justifyContent: "center" },
-  logoText: { color: "#FFFFFF", fontWeight: "900", fontSize: 23 },
+  logoText: { color: "#F7F7F7", fontWeight: "900", fontSize: 23 },
   brand: { color: "#F7F7F7", fontSize: 21, fontWeight: "900", letterSpacing: -0.5 },
   brandSub: { color: "#AEABA8", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginTop: 1 },
   weatherPill: { backgroundColor: "#141414", borderWidth: 1, borderColor: "#2A2A2A", borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
@@ -919,7 +921,7 @@ const styles = StyleSheet.create({
   heroSub: { color: "#AEABA8", fontSize: 13, lineHeight: 20, maxWidth: 500 },
   sosCard: { backgroundColor: "#171313", borderRadius: 17, borderWidth: 1, borderColor: "#5B3733", padding: 13, flexDirection: "row", alignItems: "center", gap: 12 },
   sosIcon: { width: 46, height: 46, backgroundColor: "#C71A06", borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  sosIconText: { color: "#FFFFFF", fontWeight: "900", fontSize: 17 },
+  sosIconText: { color: "#F7F7F7", fontWeight: "900", fontSize: 17 },
   sosCopy: { flex: 1, gap: 3 },
   sosTitle: { color: "#F7F7F7", fontSize: 14, fontWeight: "900" },
   sosSub: { color: "#AEABA8", fontSize: 11 },
@@ -931,7 +933,7 @@ const styles = StyleSheet.create({
   languageButton: { flex: 1, paddingVertical: 12, borderRadius: 11, backgroundColor: "#121212", borderWidth: 1, borderColor: "#2C2C2C", alignItems: "center" },
   languageSelected: { backgroundColor: "#C71A06", borderColor: "#C71A06" },
   languageText: { color: "#AEABA8", fontSize: 12, fontWeight: "800" },
-  languageTextSelected: { color: "#FFFFFF" },
+  languageTextSelected: { color: "#F7F7F7" },
   quickScroller: { flexDirection: "row", gap: 8, paddingRight: 4, paddingVertical: 2 },
   quickChip: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#131313", borderRadius: 13, borderWidth: 1, borderColor: "#2B2B2B", paddingHorizontal: 13, paddingVertical: 11 },
   quickSelected: { borderColor: "#C71A06", backgroundColor: "#211412" },
@@ -954,15 +956,15 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.82 },
   disabled: { opacity: 0.55 },
   analyzeIcon: { color: "#F7F7F7", fontSize: 17, fontWeight: "900" },
-  analyzeText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", flex: 1, textAlign: "center" },
-  analyzeArrow: { color: "#FFFFFF", fontSize: 20, fontWeight: "800" },
+  analyzeText: { color: "#F7F7F7", fontSize: 14, fontWeight: "900", flex: 1, textAlign: "center" },
+  analyzeArrow: { color: "#F7F7F7", fontSize: 20, fontWeight: "800" },
   secureNote: { textAlign: "center", color: "#AEABA8", fontSize: 9, marginTop: -10 },
   resultCard: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 19, padding: 16, gap: 11, shadowColor: "#000000", shadowOpacity: 0.20, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   resultTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   resultEyebrow: { color: "#C38F6C", fontSize: 9, fontWeight: "900", letterSpacing: 1.7 },
   resultTitle: { color: "#F7F7F7", fontSize: 25, fontWeight: "900", textTransform: "capitalize", marginTop: 3, letterSpacing: -0.6 },
   aiPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 6 },
-  aiOnline: { backgroundColor: "#172018" },
+  aiOnline: { backgroundColor: "#1B1715" },
   aiLocal: { backgroundColor: "#1A1A1A" },
   aiDot: { width: 6, height: 6, borderRadius: 4 },
   aiDotOnline: { backgroundColor: "#C38F6C" },
@@ -1003,7 +1005,7 @@ const styles = StyleSheet.create({
   facilityName: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
   facilityMeta: { color: "#AEABA8", fontSize: 10, textTransform: "capitalize" },
   verifiedText: { color: "#C38F6C", fontSize: 9, fontWeight: "800" },
-  unverifiedText: { color: "#C38F6C", fontSize: 9, fontWeight: "800" },
+  unverifiedText: { color: "#AEABA8", fontSize: 9, fontWeight: "800" },
   callFacilityButton: { backgroundColor: "#211412", borderRadius: 9, paddingHorizontal: 11, paddingVertical: 9 },
   callFacilityText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
   routeButton: { backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#5B3733", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
@@ -1043,6 +1045,6 @@ const styles = StyleSheet.create({
   recheckText: { color: "#C38F6C", fontSize: 10, fontWeight: "800" },
   diagnosticWarning: { color: "#F1B2A7", backgroundColor: "#241311", borderWidth: 1, borderColor: "#5B211B", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
   connectionBad: { backgroundColor: "#C71A06" },
-  connectionChecking: { backgroundColor: "#D69E2E" },
+  connectionChecking: { backgroundColor: "#C38F6C" },
   disclaimer: { color: "#AEABA8", fontSize: 9, textAlign: "center", lineHeight: 14 },
 });
