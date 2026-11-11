@@ -82,8 +82,9 @@ def analyze_emergency_with_gemini(message, language="en", local_type="unknown"):
 
     primary = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
     fallback = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite").strip()
-    # Leave room for one model fallback inside the API route timeout.
-    timeout_ms = max(3000, min(8000, int(os.getenv("GEMINI_HTTP_TIMEOUT_MS", "5000"))))
+    # Gemini 3.8 requires a manually configured request deadline of at least 10 seconds.
+    # Clamp local .env overrides upward so a stale 5s/9s value cannot cause HTTP 400.
+    timeout_ms = max(10000, min(15000, int(os.getenv("GEMINI_HTTP_TIMEOUT_MS", "10000"))))
     models = list(dict.fromkeys(model for model in (primary, fallback) if model))
     client = genai.Client(
         api_key=api_key,
