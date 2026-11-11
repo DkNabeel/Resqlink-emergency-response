@@ -278,6 +278,7 @@ const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
     flood: ["Move to higher ground immediately.", "Never walk or drive through floodwater.", "Stay away from electrical lines and follow official evacuation instructions."],
     earthquake: ["Drop, cover and hold on until shaking stops.", "Stay away from windows and heavy objects; do not use elevators.", "After shaking, leave damaged buildings carefully and expect aftershocks."],
     medical: ["Call 112 and request medical help.", "Apply firm direct pressure to severe external bleeding.", "Do not move a seriously injured person unless there is immediate danger."],
+    violence: ["Move away from gunfire or the threat and seek substantial cover if possible.", "Do not approach, confront or investigate armed people or suspicious objects.", "When safe, call 112 and follow police or district authority instructions."],
     gas_leak: ["Leave the area immediately.", "Do not operate switches, appliances, flames or vehicles near the suspected leak.", "From a safe location call 112; do not re-enter until cleared."],
     unknown: ["Move away from immediate danger if possible.", "Call 112 in India and give your exact location.", "Follow official local responder instructions."],
   },
@@ -286,6 +287,7 @@ const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
     flood: ["तुरंत ऊँचे स्थान पर जाएँ।", "बाढ़ के पानी में पैदल या वाहन से न जाएँ।", "बिजली की तारों से दूर रहें और आधिकारिक निकासी निर्देश मानें।"],
     earthquake: ["झटके रुकने तक नीचे झुकें, ढकें और पकड़े रहें।", "खिड़कियों और भारी वस्तुओं से दूर रहें; लिफ्ट न लें।", "झटके रुकने पर क्षतिग्रस्त इमारत से सावधानी से बाहर निकलें।"],
     medical: ["112 पर कॉल करके चिकित्सा सहायता माँगें।", "अधिक बाहरी रक्तस्राव पर साफ कपड़े से सीधा दबाव दें।", "तत्काल खतरा न हो तो गंभीर घायल को न हिलाएँ।"],
+    violence: ["गोलीबारी या खतरे से दूर जाएँ और संभव हो तो मजबूत आड़ लें।", "सशस्त्र लोगों या संदिग्ध वस्तुओं के पास न जाएँ और सामना न करें।", "सुरक्षित होने पर 112 पर कॉल करें और पुलिस के निर्देश मानें।"],
     gas_leak: ["तुरंत उस स्थान से बाहर निकलें।", "स्विच, बिजली के उपकरण या आग का उपयोग न करें।", "सुरक्षित स्थान से 112 पर कॉल करें; अनुमति मिलने तक वापस न जाएँ।"],
     unknown: ["संभव हो तो तत्काल खतरे से दूर जाएँ।", "भारत में 112 पर कॉल करके सटीक स्थान बताएँ।", "स्थानीय अधिकारियों के निर्देश मानें।"],
   },
@@ -294,6 +296,7 @@ const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
     flood: ["ತಕ್ಷಣ ಎತ್ತರದ ಪ್ರದೇಶಕ್ಕೆ ತೆರಳಿ.", "ಪ್ರವಾಹದ ನೀರಿನಲ್ಲಿ ನಡೆಯಬೇಡಿ ಅಥವಾ ವಾಹನ ಚಲಾಯಿಸಬೇಡಿ.", "ವಿದ್ಯುತ್ ತಂತಿಗಳಿಂದ ದೂರವಿದ್ದು ಅಧಿಕೃತ ಸೂಚನೆ ಪಾಲಿಸಿ."],
     earthquake: ["ಕಂಪನ ನಿಲ್ಲುವವರೆಗೆ ಕೆಳಗೆ ಬಾಗಿ, ಆಶ್ರಯ ಪಡೆದು ಹಿಡಿದುಕೊಳ್ಳಿ.", "ಕಿಟಕಿ ಮತ್ತು ಭಾರವಾದ ವಸ್ತುಗಳಿಂದ ದೂರವಿರಿ; ಲಿಫ್ಟ್ ಬಳಸಬೇಡಿ.", "ಕಂಪನ ನಿಂತ ನಂತರ ಹಾನಿಗೊಂಡ ಕಟ್ಟಡದಿಂದ ಎಚ್ಚರಿಕೆಯಿಂದ ಹೊರಬನ್ನಿ."],
     medical: ["ವೈದ್ಯಕೀಯ ಸಹಾಯಕ್ಕಾಗಿ 112ಕ್ಕೆ ಕರೆಮಾಡಿ.", "ತೀವ್ರ ರಕ್ತಸ್ರಾವಕ್ಕೆ ಸ್ವಚ್ಛ ಬಟ್ಟೆಯಿಂದ ನೇರ ಒತ್ತಡ ನೀಡಿ.", "ತಕ್ಷಣದ ಅಪಾಯವಿಲ್ಲದಿದ್ದರೆ ಗಂಭೀರ ಗಾಯಾಳುವನ್ನು ಕದಲಿಸಬೇಡಿ."],
+    violence: ["ಗುಂಡಿನ ದಾಳಿ ಅಥವಾ ಅಪಾಯದಿಂದ ದೂರ ಸರಿದು ಸಾಧ್ಯವಾದರೆ ಗಟ್ಟಿಯಾದ ಆವರಣ ಪಡೆಯಿರಿ.", "ಸಶಸ್ತ್ರ ವ್ಯಕ್ತಿಗಳು ಅಥವಾ ಅನುಮಾನಾಸ್ಪದ ವಸ್ತುಗಳ ಹತ್ತಿರ ಹೋಗಬೇಡಿ.", "ಸುರಕ್ಷಿತವಾದಾಗ 112ಕ್ಕೆ ಕರೆಮಾಡಿ ಮತ್ತು ಪೊಲೀಸರ ಸೂಚನೆ ಪಾಲಿಸಿ."],
     gas_leak: ["ತಕ್ಷಣ ಆ ಪ್ರದೇಶದಿಂದ ಹೊರಬನ್ನಿ.", "ಸ್ವಿಚ್, ವಿದ್ಯುತ್ ಉಪಕರಣ ಅಥವಾ ಬೆಂಕಿ ಬಳಸಬೇಡಿ.", "ಸುರಕ್ಷಿತ ಸ್ಥಳದಿಂದ 112ಕ್ಕೆ ಕರೆಮಾಡಿ; ಅನುಮತಿ ಸಿಗುವವರೆಗೆ ಹಿಂದಿರುಗಬೇಡಿ."],
     unknown: ["ಸಾಧ್ಯವಾದರೆ ತಕ್ಷಣದ ಅಪಾಯದಿಂದ ದೂರವಿರಿ.", "ಭಾರತದಲ್ಲಿ 112ಕ್ಕೆ ಕರೆಮಾಡಿ ನಿಖರ ಸ್ಥಳ ತಿಳಿಸಿ.", "ಸ್ಥಳೀಯ ಅಧಿಕಾರಿಗಳ ಸೂಚನೆಗಳನ್ನು ಪಾಲಿಸಿ."],
   },
@@ -310,7 +313,7 @@ const OFFLINE_TERMS: Record<string, string[]> = {
   gas_leak: ["gas leak", "gas smell", "गैस रिसाव", "ಅನಿಲ ಸೋರಿಕೆ"],
   medical: ["unconscious", "bleeding", "बेहोश", "रक्तस्राव", "ಪ್ರಜ್ಞೆ ಇಲ್ಲ", "ರಕ್ತಸ್ರಾವ"],
   road_accident: ["road accident", "car crash", "दुर्घटना", "ರಸ್ತೆ ಅಪಘಾತ"],
-  violence: ["assault", "attack", "हमला", "ದಾಳಿ", "ಹಲ್ಲೆ"],
+  violence: ["assault", "attack", "attacker", "gunfire", "gunshots", "shooting", "war", "war zone", "armed conflict", "bombing", "air raid", "shelling", "missile", "civil unrest", "हमला", "युद्ध", "गोलीबारी", "बमबारी", "हवाई हमला", "ದಾಳಿ", "ಹಲ್ಲೆ", "ಯುದ್ಧ", "ಗುಂಡಿನ ದಾಳಿ", "ಬಾಂಬ್ ದಾಳಿ"],
 };
 
 export function getOfflineGuidance(
@@ -324,6 +327,24 @@ export function getOfflineGuidance(
       terms.some((term) => normalized.includes(term.toLocaleLowerCase())),
     )?.[0] ?? "unknown";
   const normalizedLanguage = language in BUILT_IN_OFFLINE_GUIDANCE ? language : "en";
+  if (category === "unknown") {
+    const outOfScope = {
+      en: "ResQLink works only for emergency situations. Describe the danger you are facing, such as fire, flooding, injury or violence.",
+      hi: "ResQLink केवल आपातकालीन स्थितियों के लिए है। कृपया आग, बाढ़, चोट या हिंसा जैसे खतरे का वर्णन करें।",
+      kn: "ResQLink ತುರ್ತು ಪರಿಸ್ಥಿತಿಗಳಿಗಾಗಿ ಮಾತ್ರ. ಬೆಂಕಿ, ಪ್ರವಾಹ, ಗಾಯ ಅಥವಾ ಹಿಂಸೆಯಂತಹ ಅಪಾಯವನ್ನು ವಿವರಿಸಿ.",
+    } as Record<string, string>;
+    return {
+      status: "offline_guidance_only",
+      in_scope: false,
+      emergency_type: "unknown",
+      language,
+      urgency: "unknown",
+      reply: outOfScope[normalizedLanguage] ?? outOfScope.en,
+      guidance: [],
+      emergency_contact: cachedPackage?.emergency_contact ?? { number: "112", dial_uri: "tel:112" },
+      safety_notice: "Call 112 in India if anyone is in immediate danger.",
+    };
+  }
   const instructions =
     cachedPackage?.guidance_catalog?.[category]?.instructions ??
     BUILT_IN_OFFLINE_GUIDANCE[normalizedLanguage]?.[category] ??
@@ -337,6 +358,8 @@ export function getOfflineGuidance(
   } as Record<string, string>;
   return {
     status: "offline_guidance_only",
+    in_scope: true,
+    reply: instructions.join("\n"),
     emergency_type: category,
     language,
     urgency: category === "unknown" ? "undetermined" : "urgent",
