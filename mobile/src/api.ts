@@ -160,7 +160,13 @@ export async function sendEmergencyChat(input: {
   const response = await fetch(requireApiUrl() + "/emergency/chat", {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      ...input,
+      conversation_history: input.conversation_history.slice(-10).map((item) => ({
+        role: item.role,
+        content: item.content.slice(0, 1600),
+      })),
+    }),
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
