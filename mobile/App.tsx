@@ -129,6 +129,8 @@ export default function App() {
   const [routeEstimate, setRouteEstimate] = useState<RouteSummary | null>(null);
   const [routeEstimateError, setRouteEstimateError] = useState("");
   const [routeBusyFacility, setRouteBusyFacility] = useState<string | null>(null);
+  const [mapExpanded, setMapExpanded] = useState(false);
+  const [offlineExpanded, setOfflineExpanded] = useState(false);
   const facilityRequestSequence = useRef(0);
   const currentGpsAvailable = useRef(false);
 
@@ -556,11 +558,6 @@ export default function App() {
           <Text style={styles.heroSub}>{copy.subtitle}</Text>
         </View>
 
-        <Pressable onPress={openWeather} style={styles.weatherPill}>
-          <Text style={styles.weatherPillText}>☀  Local weather · temperature & humidity</Text>
-          <Text style={styles.weatherPillArrow}>↗</Text>
-        </Pressable>
-
         <Pressable onPress={callEmergencyNumber} style={({ pressed }) => [styles.sosCard, pressed && styles.pressed]}>
           <View style={styles.sosIcon}><Text style={styles.sosIconText}>112</Text></View>
           <View style={styles.sosCopy}>
@@ -590,18 +587,18 @@ export default function App() {
           <Text style={styles.sectionTitle}>Quick incident</Text>
           <Text style={styles.sectionHint}>Tap to fill</Text>
         </View>
-        <View style={styles.quickGrid}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickScroller} keyboardShouldPersistTaps="handled">
           {QUICK_REPORTS.map((item) => (
             <Pressable
               key={item.label}
               onPress={() => { setMessage(item.messages[language]); setSelectedPrompt(item.label); setResult(null); }}
-              style={[styles.quickCard, selectedPrompt === item.label && styles.quickSelected]}
+              style={[styles.quickChip, selectedPrompt === item.label && styles.quickSelected]}
             >
-              <Text style={styles.quickEmoji}>{item.emoji}</Text>
-              <Text style={[styles.quickLabel, selectedPrompt === item.label && styles.quickLabelSelected]}>{item.label}</Text>
+              <Text style={styles.quickChipEmoji}>{item.emoji}</Text>
+              <Text style={[styles.quickChipLabel, selectedPrompt === item.label && styles.quickLabelSelected]}>{item.label}</Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{copy.report}</Text>
@@ -614,12 +611,20 @@ export default function App() {
             placeholder={copy.placeholder}
             placeholderTextColor="#8793A2"
             multiline
+            scrollEnabled
             maxLength={4000}
             style={styles.input}
             textAlignVertical="top"
           />
           <View style={styles.inputFoot}><Text style={styles.inputHint}>Be clear. Mention injuries, hazards and nearby landmarks.</Text></View>
         </View>
+
+        <Pressable onPress={handleEmergency} disabled={busy} style={({ pressed }) => [styles.analyzeButton, pressed && styles.pressed, busy && styles.disabled]}>
+          {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.analyzeIcon}>✦</Text>}
+          <Text style={styles.analyzeText}>{busy ? "Analyzing..." : copy.analyze}</Text>
+          {!busy && <Text style={styles.analyzeArrow}>→</Text>}
+        </Pressable>
+        <Text style={styles.secureNote}>Emergency-only AI chat · GPS context · Government alerts and nearby services</Text>
 
         <View style={styles.locationCard}>
           <View style={styles.locationIcon}><Text style={styles.locationIconText}>⌖</Text></View>
@@ -632,7 +637,31 @@ export default function App() {
           </Pressable>
         </View>
 
-        {coordinates ? (
+        <View style={styles.toolsRow}>
+          <Pressable
+            onPress={() => {
+              if (!coordinates) { void handleLocation(); return; }
+              setMapExpanded((value) => !value);
+            }}
+            style={[styles.toolButton, mapExpanded && styles.toolButtonSelected]}
+          >
+            <Text style={styles.toolEmoji}>🗺️</Text>
+            <Text style={[styles.toolLabel, mapExpanded && styles.toolLabelSelected]}>{mapExpanded ? "Hide map" : "Map"}</Text>
+          </Pressable>
+          <Pressable onPress={openWeather} style={styles.toolButton}>
+            <Text style={styles.toolEmoji}>☀️</Text>
+            <Text style={styles.toolLabel}>Weather</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setOfflineExpanded((value) => !value)}
+            style={[styles.toolButton, offlineExpanded && styles.toolButtonSelected]}
+          >
+            <Text style={styles.toolEmoji}>◈</Text>
+            <Text style={[styles.toolLabel, offlineExpanded && styles.toolLabelSelected]}>Offline pack</Text>
+          </Pressable>
+        </View>
+
+        {mapExpanded && coordinates ? (
           <View style={styles.mapCard}>
             <Text style={styles.sectionTitle}>Your current area</Text>
             <MapView
@@ -665,13 +694,6 @@ export default function App() {
             <Text style={styles.mapNote}>Map routes are not verified against live disaster hazards. Follow official evacuation instructions.</Text>
           </View>
         ) : null}
-
-        <Pressable onPress={handleEmergency} disabled={busy} style={({ pressed }) => [styles.analyzeButton, pressed && styles.pressed, busy && styles.disabled]}>
-          {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.analyzeIcon}>✦</Text>}
-          <Text style={styles.analyzeText}>{busy ? "Analyzing..." : copy.analyze}</Text>
-          {!busy && <Text style={styles.analyzeArrow}>→</Text>}
-        </Pressable>
-        <Text style={styles.secureNote}>Emergency-only AI chat · GPS context · Government alerts and nearby services</Text>
 
         {chatHistory.length > 0 ? (
           <View style={styles.chatThread}>
@@ -793,6 +815,7 @@ export default function App() {
           </View>
         ) : null}
 
+        {offlineExpanded ? (
         <View style={styles.offlineCard}>
           <View style={styles.offlineHeader}>
             <View style={styles.offlineIcon}><Text style={styles.offlineIconText}>◈</Text></View>
@@ -814,6 +837,7 @@ export default function App() {
           </Text>
           <Text style={styles.offlineWarning}>Offline mode uses cached emergency facilities and guidance. Full offline map tiles and road-by-road routing are not included yet.</Text>
         </View>
+        ) : null}
 
         <View style={styles.footer}>
           <Text style={styles.footerStatus}>{status}</Text>
@@ -866,7 +890,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F5F7FA" },
+  safe: { flex: 1, backgroundColor: "#F7F5F1" },
   permissionGate: { flex: 1, justifyContent: "center", alignItems: "center", padding: 28, gap: 16 },
   permissionTitle: { color: "#173849", fontSize: 24, fontWeight: "900", textAlign: "center" },
   permissionBody: { color: "#617686", fontSize: 13, lineHeight: 20, textAlign: "center" },
@@ -876,7 +900,7 @@ const styles = StyleSheet.create({
   permissionSettings: { padding: 10 },
   permissionSettingsText: { color: "#14715F", fontSize: 12, fontWeight: "800" },
   permissionFootnote: { color: "#8A98A6", fontSize: 10, lineHeight: 15, textAlign: "center" },
-  container: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 44, gap: 17 },
+  container: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 44, gap: 14 },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   logo: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#123B50", alignItems: "center", justifyContent: "center" },
@@ -886,14 +910,14 @@ const styles = StyleSheet.create({
   weatherPill: { backgroundColor: "#EAF4F5", borderWidth: 1, borderColor: "#D5E7E9", borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   weatherPillText: { color: "#1C6870", fontSize: 11, fontWeight: "800" },
   weatherPillArrow: { color: "#1C6870", fontSize: 15, fontWeight: "900" },
-  readyPill: { backgroundColor: "#E7F5EF", borderRadius: 30, paddingHorizontal: 11, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 6 },
+  readyPill: { backgroundColor: "#EAF4EF", borderRadius: 30, paddingHorizontal: 11, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 6 },
   readyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#1C9A65" },
   readyText: { color: "#16734E", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
   hero: { gap: 6, paddingVertical: 4 },
   eyebrow: { color: "#16816D", fontSize: 10, fontWeight: "900", letterSpacing: 1.8 },
   heroTitle: { color: "#132F40", fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },
   heroSub: { color: "#68798A", fontSize: 13, lineHeight: 20, maxWidth: 500 },
-  sosCard: { backgroundColor: "#FFF1ED", borderRadius: 16, borderWidth: 1, borderColor: "#FFD7CA", padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  sosCard: { backgroundColor: "#FFF0E9", borderRadius: 18, borderWidth: 1, borderColor: "#F4D2C4", padding: 13, flexDirection: "row", alignItems: "center", gap: 12 },
   sosIcon: { width: 46, height: 46, backgroundColor: "#D9432F", borderRadius: 13, alignItems: "center", justifyContent: "center" },
   sosIconText: { color: "#FFFFFF", fontWeight: "900", fontSize: 17 },
   sosCopy: { flex: 1, gap: 3 },
@@ -908,17 +932,17 @@ const styles = StyleSheet.create({
   languageSelected: { backgroundColor: "#123B50", borderColor: "#123B50" },
   languageText: { color: "#647687", fontSize: 12, fontWeight: "800" },
   languageTextSelected: { color: "#FFFFFF" },
-  quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  quickCard: { width: "31.5%", minHeight: 78, backgroundColor: "#FFFFFF", borderRadius: 13, borderWidth: 1, borderColor: "#E2E8EE", alignItems: "center", justifyContent: "center", gap: 5, padding: 8 },
-  quickSelected: { borderColor: "#16816D", backgroundColor: "#EAF6F3" },
-  quickEmoji: { fontSize: 22 },
-  quickLabel: { color: "#526779", fontSize: 11, fontWeight: "800" },
-  quickLabelSelected: { color: "#14715F" },
-  inputCard: { borderWidth: 1, borderColor: "#DFE6EC", backgroundColor: "#FFFFFF", borderRadius: 15, padding: 12, gap: 8 },
-  input: { minHeight: 112, fontSize: 14, color: "#173446", lineHeight: 21, padding: 3 },
+  quickScroller: { flexDirection: "row", gap: 8, paddingRight: 4, paddingVertical: 2 },
+  quickChip: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#FFFFFF", borderRadius: 13, borderWidth: 1, borderColor: "#E7E1D8", paddingHorizontal: 13, paddingVertical: 11 },
+  quickSelected: { borderColor: "#E7663C", backgroundColor: "#FFF0E8" },
+  quickChipEmoji: { fontSize: 16 },
+  quickChipLabel: { color: "#4C5B67", fontSize: 11, fontWeight: "800" },
+  quickLabelSelected: { color: "#B74B2B" },
+  inputCard: { borderWidth: 1, borderColor: "#E6DED4", backgroundColor: "#FFFFFF", borderRadius: 19, padding: 13, gap: 8 },
+  input: { height: 116, fontSize: 14, color: "#192F3D", lineHeight: 21, padding: 3 },
   inputFoot: { borderTopWidth: 1, borderColor: "#F0F2F4", paddingTop: 8 },
   inputHint: { color: "#92A0AD", fontSize: 10 },
-  locationCard: { backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1, borderColor: "#E2E8EE", padding: 12, flexDirection: "row", alignItems: "center", gap: 10 },
+  locationCard: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#E7E1D8", padding: 11, flexDirection: "row", alignItems: "center", gap: 10 },
   locationIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#EAF4F5", alignItems: "center", justifyContent: "center" },
   locationIconText: { color: "#157B70", fontSize: 23 },
   locationCopy: { flex: 1, gap: 3 },
@@ -926,17 +950,17 @@ const styles = StyleSheet.create({
   locationSub: { color: "#83919E", fontSize: 10 },
   locationAction: { backgroundColor: "#E8F4F1", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
   locationActionText: { color: "#14715F", fontSize: 10, fontWeight: "900" },
-  analyzeButton: { backgroundColor: "#147A6A", borderRadius: 14, paddingVertical: 16, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#0D6255", shadowOpacity: 0.14, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  analyzeButton: { backgroundColor: "#E65F36", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#B84A29", shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   pressed: { opacity: 0.82 },
   disabled: { opacity: 0.55 },
   analyzeIcon: { color: "#B8F2D9", fontSize: 17, fontWeight: "900" },
   analyzeText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", flex: 1, textAlign: "center" },
   analyzeArrow: { color: "#FFFFFF", fontSize: 20, fontWeight: "800" },
   secureNote: { textAlign: "center", color: "#91A0AD", fontSize: 9, marginTop: -10 },
-  resultCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#B9DCD5", borderRadius: 16, padding: 15, gap: 11 },
+  resultCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7DED3", borderRadius: 21, padding: 17, gap: 12, shadowColor: "#403629", shadowOpacity: 0.045, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 1 },
   resultTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
-  resultEyebrow: { color: "#16816D", fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
-  resultTitle: { color: "#173849", fontSize: 23, fontWeight: "900", textTransform: "capitalize", marginTop: 3 },
+  resultEyebrow: { color: "#D85A34", fontSize: 9, fontWeight: "900", letterSpacing: 1.7 },
+  resultTitle: { color: "#182C39", fontSize: 25, fontWeight: "900", textTransform: "capitalize", marginTop: 3, letterSpacing: -0.6 },
   aiPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 6 },
   aiOnline: { backgroundColor: "#E5F5EE" },
   aiLocal: { backgroundColor: "#EDF1F5" },
@@ -949,23 +973,29 @@ const styles = StyleSheet.create({
   sourceText: { color: "#8996A3", fontSize: 10 },
   summary: { color: "#40596A", fontSize: 13, lineHeight: 19 },
   resultDivider: { height: 1, backgroundColor: "#EAF0F0" },
-  guidanceTitle: { color: "#1B3547", fontSize: 13, fontWeight: "900" },
+  guidanceTitle: { color: "#1B3547", fontSize: 14, fontWeight: "900", letterSpacing: -0.2 },
   instructionRow: { flexDirection: "row", alignItems: "flex-start", gap: 9 },
-  stepNumber: { width: 22, height: 22, borderRadius: 7, backgroundColor: "#E7F4F1", alignItems: "center", justifyContent: "center" },
-  stepNumberText: { color: "#14715F", fontSize: 10, fontWeight: "900" },
-  instruction: { flex: 1, color: "#435A69", fontSize: 12, lineHeight: 19, paddingTop: 1 },
+  stepNumber: { width: 27, height: 27, borderRadius: 9, backgroundColor: "#FFF0E8", alignItems: "center", justifyContent: "center" },
+  stepNumberText: { color: "#B94D2D", fontSize: 11, fontWeight: "900" },
+  instruction: { flex: 1, color: "#3E5260", fontSize: 13, lineHeight: 20, paddingTop: 2 },
   safetyNotice: { color: "#986A20", backgroundColor: "#FFF8E8", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
-  mapCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E2E8EE", borderRadius: 15, padding: 12, gap: 9 },
+  toolsRow: { flexDirection: "row", gap: 9 },
+  toolButton: { flex: 1, minHeight: 58, backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E7E1D8", paddingVertical: 9, alignItems: "center", justifyContent: "center", gap: 3 },
+  toolButtonSelected: { backgroundColor: "#FFF0E8", borderColor: "#ECA080" },
+  toolEmoji: { fontSize: 17 },
+  toolLabel: { color: "#526270", fontSize: 10, fontWeight: "900" },
+  toolLabelSelected: { color: "#B94D2D" },
+  mapCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E1D8", borderRadius: 19, padding: 12, gap: 9 },
   map: { width: "100%", height: 230, borderRadius: 11 },
   mapNote: { color: "#8C734F", fontSize: 9, lineHeight: 14 },
-  chatThread: { backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E2E8EE", padding: 12, gap: 8 },
+  chatThread: { backgroundColor: "#FFFFFF", borderRadius: 19, borderWidth: 1, borderColor: "#E7E1D8", padding: 14, gap: 9 },
   chatBubble: { maxWidth: "92%", padding: 11, borderRadius: 12 },
-  chatUser: { alignSelf: "flex-end", backgroundColor: "#147A6A" },
-  chatAssistant: { alignSelf: "flex-start", backgroundColor: "#EEF3F6" },
+  chatUser: { alignSelf: "flex-end", backgroundColor: "#172F3D" },
+  chatAssistant: { alignSelf: "flex-start", backgroundColor: "#F3F1EC" },
   chatBubbleText: { fontSize: 12, lineHeight: 18 },
   chatUserText: { color: "#FFFFFF" },
   chatAssistantText: { color: "#2D4656" },
-  followUp: { color: "#14715F", backgroundColor: "#EAF6F3", padding: 10, borderRadius: 9, fontSize: 11, lineHeight: 16 },
+  followUp: { color: "#285B53", backgroundColor: "#EAF4EF", padding: 12, borderRadius: 12, fontSize: 12, lineHeight: 18, overflow: "hidden" },
   facilityCard: { backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E2E8EE", padding: 13, gap: 10 },
   facilityHint: { color: "#8996A3", fontSize: 10, lineHeight: 15 },
   facilityRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderColor: "#EDF1F3", paddingTop: 10, gap: 9 },
@@ -994,7 +1024,7 @@ const styles = StyleSheet.create({
   weatherDisclaimer: { color: "#8C734F", fontSize: 9, lineHeight: 14 },
   weatherDone: { backgroundColor: "#147A6A", borderRadius: 10, padding: 12, alignItems: "center" },
   weatherDoneText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
-  offlineCard: { backgroundColor: "#EDF3F7", borderRadius: 15, padding: 14, gap: 10, borderWidth: 1, borderColor: "#DDE6EC" },
+  offlineCard: { backgroundColor: "#F1F2EF", borderRadius: 19, padding: 14, gap: 10, borderWidth: 1, borderColor: "#E3E2DA" },
   offlineHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   offlineIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: "#DCE9ED", alignItems: "center", justifyContent: "center" },
   offlineIconText: { color: "#285B68", fontSize: 22 },
