@@ -5,17 +5,15 @@ from app.services.facility_discovery_service import normalize_overpass_elements
 
 
 class TrafficTests(unittest.TestCase):
-    def test_normalizes_traffic_eta_and_distance(self):
+    def test_normalizes_road_eta_and_distance(self):
         result = normalize_route_response({
             "routes": [{
-                "duration": "900s",
-                "staticDuration": "720s",
-                "distanceMeters": 12500,
-                "polyline": {"encodedPolyline": "abc123"},
+                "summary": {"duration": 900, "distance": 12500},
+                "geometry": "abc123",
             }]
         })
-        self.assertEqual(result["traffic_aware_eta_minutes"], 15)
-        self.assertEqual(result["estimated_traffic_delay_minutes"], 3)
+        self.assertEqual(result["estimated_travel_time_minutes"], 15)
+        self.assertFalse(result["live_traffic_available"])
         self.assertEqual(result["distance_km"], 12.5)
 
     def test_traffic_route_sends_departure_time_now(self):
@@ -27,10 +25,8 @@ class TrafficTests(unittest.TestCase):
         response = MagicMock()
         response.json.return_value = {
             "routes": [{
-                "duration": "600s",
-                "staticDuration": "540s",
-                "distanceMeters": 5000,
-                "polyline": {"encodedPolyline": "xyz"},
+                "summary": {"duration": 600, "distance": 5000},
+                "geometry": "xyz",
             }]
         }
         response.raise_for_status = MagicMock()
@@ -45,13 +41,15 @@ class TrafficTests(unittest.TestCase):
                 return response
 
         fake = FakeClient()
-        with patch.dict(os.environ, {"GOOGLE_MAPS_ROUTES_API_KEY": "test-key"}):
+        with patch.dict(os.environ, {"OPENROUTESERVICE_API_KEY": "test-key"}):
             with patch("app.services.traffic_service.httpx.AsyncClient", return_value=fake):
                 result = asyncio.run(get_traffic_route(12.9, 77.5, 12.91, 77.51))
 
-        self.assertEqual(fake.body["routingPreference"], "TRAFFIC_AWARE")
-        self.assertEqual(fake.body["departureTime"], "now")
-        self.assertEqual(result["traffic_aware_eta_minutes"], 10)
+        self.assertEqual(fake.url, "https://api.heigit.org/openrouteservice/v2/directions/driving-car")
+        self.assertEqual(fake.body["coordinates"], [[77.5, 12.9], [77.51, 12.91]])
+        self.assertEqual(fake.headers["Authorization"], "test-key")
+        self.assertEqual(result["estimated_travel_time_minutes"], 10)
+        self.assertFalse(result["live_traffic_available"])
 
     def test_empty_route_response_is_rejected(self):
         with self.assertRaises(TrafficServiceError):
