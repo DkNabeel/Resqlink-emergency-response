@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import MapView, { Marker, Polyline } from "react-native-maps";
 import * as Location from "expo-location";
 import "./src/background";
 import { startBackgroundMonitoring, setBackgroundLanguage, getLastBackgroundLocation } from "./src/background";
@@ -38,6 +38,27 @@ import { getLatestOfflinePackage } from "./src/cache";
 type Coordinates = { latitude: number; longitude: number };
 type Language = "en" | "hi" | "kn";
 type FacilityLookupStatus = "idle" | "loading" | "available" | "empty" | "error";
+type FacilityFilter = "all" | "medical" | "police" | "fire" | "shelter" | "community";
+const FACILITY_FILTERS: { value: FacilityFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "medical", label: "Medical" },
+  { value: "police", label: "Police" },
+  { value: "fire", label: "Fire" },
+  { value: "shelter", label: "Shelter / assembly" },
+  { value: "community", label: "Community" },
+];
+const FACILITY_RADIUS_OPTIONS = [5, 10, 20] as const;
+
+function matchesFacilityFilter(facility: NearbyFacility, filter: FacilityFilter) {
+  const type = String(facility.facility_type ?? "").toLowerCase();
+  if (filter === "all") return true;
+  if (filter === "medical") return ["hospital", "clinic", "pharmacy", "ambulance"].includes(type);
+  if (filter === "police") return type === "police";
+  if (filter === "fire") return type === "fire_station";
+  if (filter === "shelter") return ["shelter", "assembly_point"].includes(type);
+  return ["community_center", "education"].includes(type);
+}
+
 type RouteSummary = {
   facilityKey: string;
   facilityName: string;
@@ -129,25 +150,38 @@ export default function App() {
   const [routeEstimate, setRouteEstimate] = useState<RouteSummary | null>(null);
   const [routeEstimateError, setRouteEstimateError] = useState("");
   const [routeBusyFacility, setRouteBusyFacility] = useState<string | null>(null);
+  const [routePath, setRoutePath] = useState<Coordinates[]>([]);
+  const [routeDestination, setRouteDestination] = useState<{ coordinates: Coordinates; name: string } | null>(null);
+  const [facilityFilter, setFacilityFilter] = useState<FacilityFilter>("all");
+  const [facilityRadiusKm, setFacilityRadiusKm] = useState(20);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [offlineExpanded, setOfflineExpanded] = useState(false);
   const facilityRequestSequence = useRef(0);
   const currentGpsAvailable = useRef(false);
+  const mapRef = useRef<MapView | null>(null);
 
   const copy = COPY[language];
 
-  async function refreshNearbyFacilities(point: Coordinates) {
+  useEffect(() => {
+    if (!mapExpanded || routePath.length < 2) return;
+    mapRef.current?.fitToCoordinates(routePath, {
+      edgePadding: { top: 52, right: 42, bottom: 52, left: 42 },
+      animated: true,
+    });
+  }, [mapExpanded, routePath]);
+
+  async function refreshNearbyFacilities(point: Coordinates, radiusKm = facilityRadiusKm) {
     if (!isApiConfigured()) return;
     const requestSequence = ++facilityRequestSequence.current;
     setFacilityLookupStatus("loading");
     setFacilityLookupError("");
     try {
-      const found = await getNearbyFacilities(point, 20);
+      const found = await getNearbyFacilities(point, radiusKm);
       if (requestSequence !== facilityRequestSequence.current) return;
       const items = Array.isArray(found.items) ? found.items : [];
       setNearbyFacilities(items);
       setFacilityLookupStatus(items.length > 0 ? "available" : "empty");
-      const saved = await cacheNearbyFacilities(items, point, 20).catch(() => null);
+      const saved = await cacheNearbyFacilities(items, point, radiusKm).catch(() => null);
       if (saved && saved.items.length > 0) {
         setCachedNearbyFacilities(saved.items);
         setCachedNearbyFacilitiesAt(saved.storedAt);
@@ -158,10 +192,10 @@ export default function App() {
           : current);
       }
       setStatus(items.length > 0
-        ? `Found ${items.length} nearby facility candidate(s)`
+        ? `Found ${items.length} nearby facility candidate(s) within ${radiusKm} km`
         : saved?.items.length
           ? "No new live results · showing previously saved nearby facilities"
-          : "No mapped public-service or community facilities returned within 20 km");
+          : `No mapped public-service or community facilities returned within ${radiusKm} km`);
     } catch (error) {
       if (requestSequence !== facilityRequestSequence.current) return;
       const detail = error instanceof Error ? error.message : "Nearby facility lookup failed.";
@@ -425,45 +459,55 @@ export default function App() {
       return;
     }
     const key = facilityKey(facility);
+    const destinationPoint = {
+      latitude: facility.latitude,
+      longitude: facility.longitude,
+    };
+    const destinationName = facility.name ?? "Nearby facility";
     setRouteBusyFacility(key);
     setRouteEstimateError("");
     setRouteEstimate(null);
+    setRoutePath([]);
+    setRouteDestination({ coordinates: destinationPoint, name: destinationName });
+    setMapExpanded(true);
     try {
       const originPoint = coordinates ?? await obtainLocation();
-      const destinationPoint = {
-        latitude: facility.latitude,
-        longitude: facility.longitude,
-      };
-      const mapsUrl = "https://www.google.com/maps/dir/?api=1"
-        + "&origin=" + originPoint.latitude + "," + originPoint.longitude
-        + "&destination=" + destinationPoint.latitude + "," + destinationPoint.longitude
-        + "&travelmode=driving";
-
-      try {
-        const route: DrivingRouteEstimate = await getDrivingRoute(originPoint, destinationPoint);
-        setRouteEstimate({
-          facilityKey: key,
-          facilityName: facility.name ?? "Nearby facility",
-          distanceKm: route.distance_km,
-          etaMinutes: route.estimated_travel_time_minutes,
-          note: route.note,
-        });
-        setStatus("Road route estimate calculated");
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : "Road route estimate unavailable.";
-        setRouteEstimateError(detail);
-        setStatus("Route estimate unavailable · opening map directions instead");
-      }
-
-      try {
-        await Linking.openURL(mapsUrl);
-      } catch {
-        setStatus("Unable to open Google Maps directions. Check your internet connection.");
-      }
+      const route: DrivingRouteEstimate = await getDrivingRoute(originPoint, destinationPoint);
+      const rawCoordinates = route.route_geometry?.coordinates;
+      const path = Array.isArray(rawCoordinates)
+        ? rawCoordinates
+            .filter((point) => Array.isArray(point) && point.length >= 2
+              && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1])))
+            .map((point) => ({ latitude: Number(point[1]), longitude: Number(point[0]) }))
+        : [];
+      setRoutePath(path);
+      setRouteEstimate({
+        facilityKey: key,
+        facilityName: destinationName,
+        distanceKm: route.distance_km,
+        etaMinutes: route.estimated_travel_time_minutes,
+        note: route.note,
+      });
+      setStatus(path.length > 1 ? "Driving route preview ready" : "Road route estimate calculated");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "A current GPS location is required for route calculation.");
+      const detail = error instanceof Error ? error.message : "Road route estimate unavailable.";
+      setRouteEstimateError(detail);
+      setStatus("Route estimate unavailable · you can still open map directions");
     } finally {
       setRouteBusyFacility(null);
+    }
+  }
+
+  async function openTurnByTurnDirections() {
+    if (!coordinates || !routeDestination) return;
+    const mapsUrl = "https://www.google.com/maps/dir/?api=1"
+      + "&origin=" + coordinates.latitude + "," + coordinates.longitude
+      + "&destination=" + routeDestination.coordinates.latitude + "," + routeDestination.coordinates.longitude
+      + "&travelmode=driving";
+    try {
+      await Linking.openURL(mapsUrl);
+    } catch {
+      setStatus("Unable to open Google Maps directions. Check your internet connection.");
     }
   }
 
@@ -510,6 +554,10 @@ export default function App() {
       : cachedNearbyFacilities.length > 0
         ? cachedNearbyFacilities
         : (result?.nearby_facilities?.length ? result.nearby_facilities : packageFacilities);
+  const visibleFacilities = facilities
+    .filter((facility) => matchesFacilityFilter(facility, facilityFilter))
+    .sort((a, b) => (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY))
+    .slice(0, 12);
 
   if (!permissionsReady) {
     return (
@@ -713,6 +761,7 @@ export default function App() {
           <View style={styles.mapCard}>
             <Text style={styles.sectionTitle}>Your current area</Text>
             <MapView
+              ref={mapRef}
               style={styles.map}
               userInterfaceStyle="dark"
               tintColor="#C38F6C"
@@ -722,36 +771,79 @@ export default function App() {
                 latitudeDelta: 0.025,
                 longitudeDelta: 0.025,
               }}
-              region={{
-                latitude: coordinates.latitude,
-                longitude: coordinates.longitude,
-                latitudeDelta: 0.025,
-                longitudeDelta: 0.025,
+              onMapReady={() => {
+                if (routePath.length > 1) {
+                  mapRef.current?.fitToCoordinates(routePath, {
+                    edgePadding: { top: 52, right: 42, bottom: 52, left: 42 },
+                    animated: true,
+                  });
+                }
               }}
               showsUserLocation
               showsMyLocationButton
             >
-              <Marker coordinate={coordinates} title="Your location" pinColor="#C71A06" />
-              {facilities.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number").map((item, index) => (
+              <Marker coordinate={coordinates} title="Your current location" pinColor="#D13B2F" />
+              {visibleFacilities.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number").map((item, index) => (
                 <Marker
                   key={String(item.name ?? "facility") + "-" + index}
                   coordinate={{ latitude: item.latitude as number, longitude: item.longitude as number }}
                   title={item.name ?? "Emergency facility"}
                   description={(item.facility_type ?? "Facility").replaceAll("_", " ") + " · " + (item.verification_status ?? "unverified")}
+                  pinColor={routeDestination?.coordinates.latitude === item.latitude && routeDestination?.coordinates.longitude === item.longitude ? "#D13B2F" : "#C38F6C"}
                 />
               ))}
+              {routePath.length > 1 ? (
+                <Polyline coordinates={routePath} strokeWidth={5} strokeColor="#D13B2F" />
+              ) : null}
             </MapView>
-            <Text style={styles.mapNote}>Map routes are not verified against live disaster hazards. Follow official evacuation instructions.</Text>
+            <Text style={styles.mapNote}>
+              {routeDestination
+                ? "Route preview to " + routeDestination.name + ". This is a road-network estimate, not a hazard-cleared or officially safe route."
+                : "Map points are community-mapped candidates unless marked as verified. They are not automatically designated safe zones."}
+            </Text>
           </View>
         ) : null}
 
         {coordinates ? (
           <View style={styles.facilityCard}>
             <Text style={styles.sectionTitle}>Nearby emergency facilities</Text>
-            <Text style={styles.facilityHint}>Searching a 20 km radius for hospitals, clinics, pharmacies, police, fire stations, ambulance services, shelters and colleges. Map candidates remain unverified.</Text>
+            <Text style={styles.facilityHint}>
+              Search public-service candidates around your GPS location. Community-mapped places are unverified and must not be treated as confirmed safe zones.
+            </Text>
+            <View style={styles.facilityRadiusSection}>
+              <Text style={styles.facilityMeta}>Search radius</Text>
+              <View style={styles.facilityFilterRow}>
+                {FACILITY_RADIUS_OPTIONS.map((radius) => (
+                  <Pressable
+                    key={String(radius)}
+                    onPress={() => {
+                      setFacilityRadiusKm(radius);
+                      if (coordinates) void refreshNearbyFacilities(coordinates, radius);
+                    }}
+                    style={[styles.facilityFilter, facilityRadiusKm === radius && styles.facilityFilterSelected]}
+                  >
+                    <Text style={[styles.facilityFilterText, facilityRadiusKm === radius && styles.facilityFilterTextSelected]}>{radius} km</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+            <View style={styles.facilityFilterRow}>
+              {FACILITY_FILTERS.map((filter) => (
+                <Pressable
+                  key={filter.value}
+                  onPress={() => setFacilityFilter(filter.value)}
+                  style={[styles.facilityFilter, facilityFilter === filter.value && styles.facilityFilterSelected]}
+                >
+                  <Text style={[styles.facilityFilterText, facilityFilter === filter.value && styles.facilityFilterTextSelected]}>{filter.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.facilityMeta}>
+              Showing {visibleFacilities.length} of {facilities.length} saved/live candidates within {facilityRadiusKm} km
+            </Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
-                <ActivityIndicator color="#C71A06" />
+                <ActivityIndicator color="#D13B2F" />
                 <Text style={styles.facilityMeta}>Finding nearby hospitals, shelters, fire and police services...</Text>
               </View>
             ) : null}
@@ -762,7 +854,10 @@ export default function App() {
               </Text>
             ) : null}
             {facilityLookupStatus === "empty" && facilities.length === 0 ? (
-              <Text style={styles.facilityHint}>No mapped public-service or community facilities were returned within 20 km. This does not mean no services exist nearby; use 112 for urgent help.</Text>
+              <Text style={styles.facilityHint}>No mapped public-service or community facilities were returned within {facilityRadiusKm} km. This does not mean no services exist nearby; use 112 for urgent help.</Text>
+            ) : null}
+            {facilities.length > 0 && visibleFacilities.length === 0 ? (
+              <Text style={styles.facilityHint}>No saved candidates match this category. Choose All or another category to see nearby places.</Text>
             ) : null}
             {nearbyFacilities.length === 0 && cachedNearbyFacilities.length > 0 ? (
               <Text style={styles.facilityHint}>
@@ -774,7 +869,7 @@ export default function App() {
             {facilityLookupStatus === "idle" && facilities.length === 0 ? (
               <Text style={styles.facilityHint}>Nearby facility lookup will start when GPS is ready.</Text>
             ) : null}
-            {facilities.slice(0, 12).map((facility, index) => {
+            {visibleFacilities.map((facility, index) => {
               const key = facilityKey(facility);
               return (
                 <View key={key + "-" + index} style={styles.facilityRow}>
@@ -804,10 +899,21 @@ export default function App() {
               );
             })}
             {routeEstimate ? (
-              <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: "#E5EBEF", marginTop: 6 }}>
-                <Text style={styles.facilityName}>🚗 Route estimate · {routeEstimate.facilityName}</Text>
-                <Text style={styles.facilityMeta}>{routeEstimate.distanceKm.toFixed(2)} km · about {routeEstimate.etaMinutes.toFixed(0)} min driving</Text>
+              <View style={styles.routePreviewCard}>
+                <Text style={styles.facilityName}>Driving route · {routeEstimate.facilityName}</Text>
+                <Text style={styles.routePreviewMetric}>{routeEstimate.distanceKm.toFixed(2)} km · about {routeEstimate.etaMinutes.toFixed(0)} min</Text>
                 <Text style={styles.facilityHint}>{routeEstimate.note} Not checked against live disaster hazards.</Text>
+                <Pressable onPress={openTurnByTurnDirections} style={styles.routeDirectionsButton}>
+                  <Text style={styles.routeDirectionsText}>Open turn-by-turn directions ↗</Text>
+                </Pressable>
+              </View>
+            ) : routeDestination ? (
+              <View style={styles.routePreviewCard}>
+                <Text style={styles.facilityName}>Route destination · {routeDestination.name}</Text>
+                <Text style={styles.facilityHint}>The in-app road estimate is unavailable. You can still request directions from Google Maps.</Text>
+                <Pressable onPress={openTurnByTurnDirections} style={styles.routeDirectionsButton}>
+                  <Text style={styles.routeDirectionsText}>Open directions in Google Maps ↗</Text>
+                </Pressable>
               </View>
             ) : null}
             {routeEstimateError ? <Text style={styles.diagnosticWarning}>{routeEstimateError}</Text> : null}
@@ -871,7 +977,7 @@ export default function App() {
                 <Text style={styles.weatherCloseText}>✕</Text>
               </Pressable>
             </View>
-            {weatherBusy ? <ActivityIndicator color="#C71A06" size="large" /> : weatherData?.current ? (
+            {weatherBusy ? <ActivityIndicator color="#D13B2F" size="large" /> : weatherData?.current ? (
               <>
                 <Text style={styles.weatherCondition}>{weatherData.current.condition ?? "Current conditions"}</Text>
                 <Text style={styles.weatherTemperature}>{weatherData.current.temperature_c ?? "—"}°C</Text>
@@ -897,7 +1003,7 @@ const styles = StyleSheet.create({
   permissionTitle: { color: "#F7F7F7", fontSize: 24, fontWeight: "900", textAlign: "center" },
   permissionBody: { color: "#AEABA8", fontSize: 13, lineHeight: 20, textAlign: "center" },
   permissionMessage: { color: "#C38F6C", backgroundColor: "#1B1716", borderWidth: 1, borderColor: "#5B3733", borderRadius: 10, padding: 12, fontSize: 11, lineHeight: 17, textAlign: "center" },
-  permissionButton: { backgroundColor: "#C71A06", borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, minWidth: "100%", alignItems: "center" },
+  permissionButton: { backgroundColor: "#D13B2F", borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, minWidth: "100%", alignItems: "center" },
   permissionButtonText: { color: "#F7F7F7", fontSize: 13, fontWeight: "900" },
   permissionSettings: { padding: 10 },
   permissionSettingsText: { color: "#C38F6C", fontSize: 12, fontWeight: "800" },
@@ -905,7 +1011,7 @@ const styles = StyleSheet.create({
   container: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 44, gap: 14 },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  logo: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#C71A06", alignItems: "center", justifyContent: "center" },
+  logo: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#D13B2F", alignItems: "center", justifyContent: "center" },
   logoText: { color: "#F7F7F7", fontWeight: "900", fontSize: 23 },
   brand: { color: "#F7F7F7", fontSize: 21, fontWeight: "900", letterSpacing: -0.5 },
   brandSub: { color: "#AEABA8", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginTop: 1 },
@@ -920,23 +1026,23 @@ const styles = StyleSheet.create({
   heroTitle: { color: "#F7F7F7", fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },
   heroSub: { color: "#AEABA8", fontSize: 13, lineHeight: 20, maxWidth: 500 },
   sosCard: { backgroundColor: "#171313", borderRadius: 17, borderWidth: 1, borderColor: "#5B3733", padding: 13, flexDirection: "row", alignItems: "center", gap: 12 },
-  sosIcon: { width: 46, height: 46, backgroundColor: "#C71A06", borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  sosIcon: { width: 46, height: 46, backgroundColor: "#D13B2F", borderRadius: 13, alignItems: "center", justifyContent: "center" },
   sosIconText: { color: "#F7F7F7", fontWeight: "900", fontSize: 17 },
   sosCopy: { flex: 1, gap: 3 },
   sosTitle: { color: "#F7F7F7", fontSize: 14, fontWeight: "900" },
   sosSub: { color: "#AEABA8", fontSize: 11 },
-  sosArrow: { color: "#C71A06", fontSize: 22, fontWeight: "700" },
+  sosArrow: { color: "#D13B2F", fontSize: 22, fontWeight: "700" },
   sectionHeader: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginBottom: -9 },
   sectionTitle: { color: "#F7F7F7", fontSize: 14, fontWeight: "900" },
   sectionHint: { color: "#AEABA8", fontSize: 10, fontWeight: "600" },
   languageRow: { flexDirection: "row", gap: 8 },
   languageButton: { flex: 1, paddingVertical: 12, borderRadius: 11, backgroundColor: "#121212", borderWidth: 1, borderColor: "#2C2C2C", alignItems: "center" },
-  languageSelected: { backgroundColor: "#C71A06", borderColor: "#C71A06" },
+  languageSelected: { backgroundColor: "#D13B2F", borderColor: "#D13B2F" },
   languageText: { color: "#AEABA8", fontSize: 12, fontWeight: "800" },
   languageTextSelected: { color: "#F7F7F7" },
   quickScroller: { flexDirection: "row", gap: 8, paddingRight: 4, paddingVertical: 2 },
   quickChip: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#131313", borderRadius: 13, borderWidth: 1, borderColor: "#2B2B2B", paddingHorizontal: 13, paddingVertical: 11 },
-  quickSelected: { borderColor: "#C71A06", backgroundColor: "#211412" },
+  quickSelected: { borderColor: "#D13B2F", backgroundColor: "#211412" },
   quickChipEmoji: { fontSize: 16 },
   quickChipLabel: { color: "#AEABA8", fontSize: 11, fontWeight: "800" },
   quickLabelSelected: { color: "#F7F7F7" },
@@ -952,7 +1058,7 @@ const styles = StyleSheet.create({
   locationSub: { color: "#AEABA8", fontSize: 10 },
   locationAction: { backgroundColor: "#211412", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
   locationActionText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
-  analyzeButton: { backgroundColor: "#C71A06", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#C71A06", shadowOpacity: 0.14, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  analyzeButton: { backgroundColor: "#D13B2F", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#D13B2F", shadowOpacity: 0.14, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   pressed: { opacity: 0.82 },
   disabled: { opacity: 0.55 },
   analyzeIcon: { color: "#F7F7F7", fontSize: 17, fontWeight: "900" },
@@ -983,7 +1089,7 @@ const styles = StyleSheet.create({
   safetyNotice: { color: "#C38F6C", backgroundColor: "#1B1715", borderWidth: 1, borderColor: "#5B3733", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
   toolsRow: { flexDirection: "row", gap: 9 },
   toolButton: { flex: 1, minHeight: 58, backgroundColor: "#121212", borderRadius: 15, borderWidth: 1, borderColor: "#2C2C2C", paddingVertical: 9, alignItems: "center", justifyContent: "center", gap: 3 },
-  toolButtonSelected: { backgroundColor: "#211412", borderColor: "#C71A06" },
+  toolButtonSelected: { backgroundColor: "#211412", borderColor: "#D13B2F" },
   toolEmoji: { fontSize: 17 },
   toolLabel: { color: "#AEABA8", fontSize: 10, fontWeight: "900" },
   toolLabelSelected: { color: "#F7F7F7" },
@@ -1000,6 +1106,12 @@ const styles = StyleSheet.create({
   followUp: { color: "#F7F7F7", backgroundColor: "#1B1716", borderWidth: 1, borderColor: "#5B3733", padding: 12, borderRadius: 12, fontSize: 12, lineHeight: 18, overflow: "hidden" },
   facilityCard: { backgroundColor: "#111111", borderRadius: 15, borderWidth: 1, borderColor: "#2C2C2C", padding: 13, gap: 10 },
   facilityHint: { color: "#AEABA8", fontSize: 10, lineHeight: 15 },
+  facilityRadiusSection: { gap: 6 },
+  facilityFilterRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  facilityFilter: { backgroundColor: "#171717", borderWidth: 1, borderColor: "#303030", borderRadius: 18, paddingHorizontal: 11, paddingVertical: 7 },
+  facilityFilterSelected: { backgroundColor: "#211412", borderColor: "#D13B2F" },
+  facilityFilterText: { color: "#AEABA8", fontSize: 10, fontWeight: "800" },
+  facilityFilterTextSelected: { color: "#F7F7F7" },
   facilityRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderColor: "#2A2A2A", paddingTop: 10, gap: 9 },
   facilityCopy: { flex: 1, gap: 3 },
   facilityName: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
@@ -1010,6 +1122,10 @@ const styles = StyleSheet.create({
   callFacilityText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
   routeButton: { backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#5B3733", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
   routeButtonText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
+  routePreviewCard: { paddingTop: 11, borderTopWidth: 1, borderTopColor: "#2A2A2A", marginTop: 6, gap: 7 },
+  routePreviewMetric: { color: "#F7F7F7", fontSize: 15, fontWeight: "900" },
+  routeDirectionsButton: { backgroundColor: "#211412", borderWidth: 1, borderColor: "#5B3733", borderRadius: 10, padding: 12, alignItems: "center" },
+  routeDirectionsText: { color: "#D13B2F", fontSize: 11, fontWeight: "900" },
   modalShade: { flex: 1, backgroundColor: "rgba(0,0,0,0.78)", justifyContent: "center", padding: 22 },
   weatherModal: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 18, padding: 18, gap: 14 },
   weatherModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
@@ -1024,7 +1140,7 @@ const styles = StyleSheet.create({
   weatherMetricValue: { color: "#C38F6C", fontSize: 13, fontWeight: "900" },
   weatherMetricLabel: { color: "#AEABA8", fontSize: 9 },
   weatherDisclaimer: { color: "#AEABA8", fontSize: 9, lineHeight: 14 },
-  weatherDone: { backgroundColor: "#C71A06", borderRadius: 10, padding: 12, alignItems: "center" },
+  weatherDone: { backgroundColor: "#D13B2F", borderRadius: 10, padding: 12, alignItems: "center" },
   weatherDoneText: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
   offlineCard: { backgroundColor: "#111111", borderRadius: 19, padding: 14, gap: 10, borderWidth: 1, borderColor: "#2C2C2C" },
   offlineHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -1035,7 +1151,7 @@ const styles = StyleSheet.create({
   offlineSub: { color: "#AEABA8", fontSize: 10 },
   offlineButton: { backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#3A302D", borderRadius: 10, padding: 12, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 },
   offlineButtonText: { color: "#F7F7F7", fontSize: 11, fontWeight: "900" },
-  offlineButtonArrow: { color: "#C71A06", fontSize: 16, fontWeight: "900" },
+  offlineButtonArrow: { color: "#D13B2F", fontSize: 16, fontWeight: "900" },
   offlineStatus: { color: "#AEABA8", fontSize: 10 },
   offlineWarning: { color: "#C38F6C", fontSize: 9, lineHeight: 14 },
   footer: { paddingTop: 3, gap: 5, alignItems: "center" },
@@ -1044,7 +1160,7 @@ const styles = StyleSheet.create({
   recheckButton: { paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "#1A1A1A", borderRadius: 8 },
   recheckText: { color: "#C38F6C", fontSize: 10, fontWeight: "800" },
   diagnosticWarning: { color: "#F1B2A7", backgroundColor: "#241311", borderWidth: 1, borderColor: "#5B211B", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
-  connectionBad: { backgroundColor: "#C71A06" },
+  connectionBad: { backgroundColor: "#D13B2F" },
   connectionChecking: { backgroundColor: "#C38F6C" },
   disclaimer: { color: "#AEABA8", fontSize: 9, textAlign: "center", lineHeight: 14 },
 });
