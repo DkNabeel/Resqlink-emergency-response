@@ -270,7 +270,7 @@ export default function App() {
         }
         setChatHistory((current) => [
           ...current,
-          { role: "user", content: submittedMessage },
+          { role: "user" as const, content: submittedMessage },
           ...(response.reply ? [{ role: "assistant" as const, content: response.reply }] : []),
         ].slice(-10));
         setStatus("Emergency response received");
@@ -288,8 +288,8 @@ export default function App() {
       setResult({ ...fallback, reply: offlineReply, diagnostic_message: reason });
       setChatHistory((current) => [
         ...current,
-        { role: "user", content: submittedMessage },
-        { role: "assistant", content: offlineReply },
+        { role: "user" as const, content: submittedMessage },
+        { role: "assistant" as const, content: offlineReply },
       ].slice(-10));
       setMessage("");
       setSelectedPrompt("");
