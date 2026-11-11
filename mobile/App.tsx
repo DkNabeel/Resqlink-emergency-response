@@ -22,6 +22,8 @@ import {
   isApiConfigured,
   sendEmergencyChat,
   getNearbyWeather,
+  getNearbyFacilities,
+  cacheNearbyFacilities,
   downloadOfflinePackage,
   type EmergencyResult,
   type NearbyFacility,
@@ -92,6 +94,7 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
+  const [geoDetails, setGeoDetails] = useState<{ city?: string; district?: string; state?: string }>({});
   const [offlinePackage, setOfflinePackage] = useState<OfflinePackage | null>(null);
   const [result, setResult] = useState<EmergencyResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -161,6 +164,19 @@ export default function App() {
     const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
     setCoordinates(point);
+    try {
+      const addresses = await Location.reverseGeocodeAsync(point);
+      const address = addresses[0];
+      if (address) {
+        setGeoDetails({
+          city: address.city ?? address.subregion ?? undefined,
+          district: address.district ?? address.subregion ?? address.city ?? undefined,
+          state: address.region ?? undefined,
+        });
+      }
+    } catch {
+      // GPS coordinates remain usable when reverse geocoding is unavailable.
+    }
     setLocationStatus("GPS location received · accuracy about " + Math.round(position.coords.accuracy ?? 0) + " m");
     return point;
   }
@@ -219,9 +235,24 @@ export default function App() {
         conversation_history: chatHistory.slice(-10),
         ...(point ? { latitude: point.latitude, longitude: point.longitude } : {}),
         radius_km: 10,
+        ...geoDetails,
       });
       setResult(response);
       if (response.in_scope) {
+        if (point) {
+          // Keep the urgent Groq reply fast; load OSM places separately.
+          void getNearbyFacilities(point, 10).then(async (found) => {
+            const candidates = found.items ?? [];
+            setResult((current) => {
+              if (!current || !current.in_scope) return current;
+              const existing = current.nearby_facilities ?? [];
+              const keys = new Set(existing.map((item) => [item.name, item.latitude, item.longitude].join("|")));
+              const additional = candidates.filter((item) => !keys.has([item.name, item.latitude, item.longitude].join("|")));
+              return { ...current, nearby_facilities: [...existing, ...additional] };
+            });
+            await cacheNearbyFacilities(candidates).catch(() => {});
+          }).catch(() => {});
+        }
         setChatHistory((current) => [
           ...current,
           { role: "user", content: submittedMessage },
