@@ -16,6 +16,24 @@ class TrafficTests(unittest.TestCase):
         self.assertFalse(result["live_traffic_available"])
         self.assertEqual(result["distance_km"], 12.5)
 
+    def test_normalizes_geojson_route_geometry_for_mobile_preview(self):
+        result = normalize_route_response({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[77.5, 12.9], [77.51, 12.91]],
+                },
+                "properties": {
+                    "summary": {"duration": 600, "distance": 5000},
+                },
+            }],
+        })
+        self.assertEqual(result["estimated_travel_time_minutes"], 10)
+        self.assertEqual(result["route_geometry"]["type"], "LineString")
+        self.assertEqual(result["route_geometry"]["coordinates"][0], [77.5, 12.9])
+
     def test_traffic_route_sends_departure_time_now(self):
         import asyncio
         import os
@@ -24,10 +42,17 @@ class TrafficTests(unittest.TestCase):
 
         response = MagicMock()
         response.json.return_value = {
-            "routes": [{
-                "summary": {"duration": 600, "distance": 5000},
-                "geometry": "xyz",
-            }]
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[77.5, 12.9], [77.51, 12.91]],
+                },
+                "properties": {
+                    "summary": {"duration": 600, "distance": 5000},
+                },
+            }],
         }
         response.raise_for_status = MagicMock()
 
@@ -45,7 +70,7 @@ class TrafficTests(unittest.TestCase):
             with patch("app.services.traffic_service.httpx.AsyncClient", return_value=fake):
                 result = asyncio.run(get_traffic_route(12.9, 77.5, 12.91, 77.51))
 
-        self.assertEqual(fake.url, "https://api.heigit.org/openrouteservice/v2/directions/driving-car")
+        self.assertEqual(fake.url, "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson")
         self.assertEqual(fake.body["coordinates"], [[77.5, 12.9], [77.51, 12.91]])
         self.assertEqual(fake.headers["Authorization"], "test-key")
         self.assertEqual(result["estimated_travel_time_minutes"], 10)
