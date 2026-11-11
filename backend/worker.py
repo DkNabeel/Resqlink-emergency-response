@@ -44,7 +44,6 @@ class EmergencyRequest(BaseModel):
     include_weather: bool = False
     weather_forecast_hours: int = Field(default=6, ge=1, le=24)
     use_ai: bool = True
-    use_gemini: bool = True  # Backward-compatible request alias only.
 
     @field_validator("message")
     @classmethod
@@ -62,8 +61,12 @@ class TrafficRouteRequest(BaseModel):
 
 
 def _env(request: Request, name: str, default: str = "") -> str:
+    # Production secrets come from the Worker env binding. In local development,
+    # Wrangler can also expose values imported from the existing backend/.env.
     env = request.scope.get("env")
-    value = getattr(env, name, default) if env is not None else default
+    value = getattr(env, name, None) if env is not None else None
+    if value is None:
+        value = os.getenv(name, default)
     return str(value if value is not None else default)
 
 
@@ -337,9 +340,6 @@ async def receive_emergency(payload: EmergencyRequest, request: Request):
         "ai_provider": "Groq",
         "ai_status": ai_status,
         "ai_analysis": ai_analysis,
-        # Backward-compatible aliases for older app builds.
-        "gemini_status": ai_status,
-        "gemini_analysis": ai_analysis,
         "location_used": (
             {
                 "latitude": payload.latitude,
