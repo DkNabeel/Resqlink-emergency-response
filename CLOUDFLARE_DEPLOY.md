@@ -56,10 +56,12 @@ If you need to create the local file on a fresh clone, run:
 Copy-Item backend/.env.example backend/.env
 ```
 
-For Cloudflare local development, Wrangler expects local variables beside `wrangler.jsonc` (the repository root). Instead of copying the secrets into another file, load the existing `backend/.env` values into the current PowerShell process and tell Wrangler to include process environment variables:
+For Cloudflare local development, Wrangler reads `.env` next to `wrangler.jsonc` by default. Your existing secrets are in `backend/.env`, so load that file into the current PowerShell process instead of creating a duplicate file. This works when the terminal is in the repository root or a subfolder:
 
 ```powershell
-Get-Content .\backend\.env | ForEach-Object {
+$repoRoot = git rev-parse --show-toplevel
+$envFile = Join-Path $repoRoot "backend\.env"
+Get-Content $envFile | ForEach-Object {
     $line = $_.Trim()
     if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
         $parts = $line -split "=", 2
@@ -69,9 +71,11 @@ Get-Content .\backend\.env | ForEach-Object {
     }
 }
 $env:CLOUDFLARE_INCLUDE_PROCESS_ENV = "true"
+Write-Host "Groq key loaded: $([bool]$env:GROQ_API_KEY)"
+Write-Host "HeiGIT key loaded: $([bool]$env:OPENROUTESERVICE_API_KEY)"
 ```
 
-Run this in the same terminal session before `uv run pywrangler dev`. It reads your existing local file; it does not display or copy the secret values.
+Both checks should print `True` after both keys have been added to `backend/.env`. If HeiGIT is not configured yet, its check will correctly print `False`. Start `uv run pywrangler dev` from the repository root in that same terminal session. Do not print or share the secret values.
 
 **API configuration already present in `backend/.env.example`:**
 
