@@ -27,17 +27,37 @@ _CACHE_LOCK = asyncio.Lock()
 
 
 def _facility_type(tags):
-    amenity = str(tags.get("amenity") or "").lower()
-    emergency = str(tags.get("emergency") or "").lower()
-    healthcare = str(tags.get("healthcare") or "").lower()
-    if amenity in {"hospital", "police", "fire_station", "shelter"}:
-        return amenity
+    """Map a wider set of useful community-mapped places without treating them as verified."""
+    amenity = str(tags.get("amenity") or "").strip().lower()
+    emergency = str(tags.get("emergency") or "").strip().lower()
+    healthcare = str(tags.get("healthcare") or "").strip().lower()
+    education = str(tags.get("education") or "").strip().lower()
+
+    direct_types = {
+        "hospital": "hospital",
+        "police": "police",
+        "fire_station": "fire_station",
+        "shelter": "shelter",
+        "clinic": "clinic",
+        "doctors": "clinic",
+        "college": "college",
+        "university": "college",
+        "school": "school",
+    }
+    if amenity in direct_types:
+        return direct_types[amenity]
     if emergency == "ambulance_station":
         return "ambulance"
+    if emergency == "fire_service":
+        return "fire_station"
+    if emergency == "police":
+        return "police"
     if healthcare == "hospital":
         return "hospital"
-    if healthcare in {"clinic", "doctor"}:
-        return "other"
+    if healthcare in {"clinic", "doctor", "centre", "center"}:
+        return "clinic"
+    if education in {"college", "university"}:
+        return "college"
     return None
 
 
@@ -134,38 +154,45 @@ async def discover_facilities(latitude, longitude, radius_km=5):
 
     key = (round(latitude, 4), round(longitude, 4), round(radius_km, 1))
     cached = _CACHE.get(key)
-    if cached and time.monotonic() - cached["at"] < CACHE_SECONDS:
+    if cached and time.monotonic() - cached["at"] < cached.get("ttl", CACHE_SECONDS):
         return {**cached["result"], "cache_status": "cached"}
 
     radius_m = int(radius_km * 1000)
+    # Include emergency services, medical providers and nearby public
+    # educational institutions. These are map candidates, never assumed safe.
     query = f"""
 [out:json][timeout:25];
 (
-  nwr(around:{radius_m},{latitude},{longitude})["amenity"~"hospital|police|fire_station|shelter"];
-  nwr(around:{radius_m},{latitude},{longitude})["emergency"="ambulance_station"];
-  nwr(around:{radius_m},{latitude},{longitude})["healthcare"~"hospital|clinic|doctor"];
+  nwr(around:{radius_m},{latitude},{longitude})["amenity"~"hospital|clinic|doctors|police|fire_station|shelter|college|university|school"];
+  nwr(around:{radius_m},{latitude},{longitude})["emergency"~"ambulance_station|fire_service|police"];
+  nwr(around:{radius_m},{latitude},{longitude})["healthcare"~"hospital|clinic|doctor|centre|center"];
+  nwr(around:{radius_m},{latitude},{longitude})["education"~"college|university"];
 );
 out center tags;
 """.strip()
 
     async with _CACHE_LOCK:
         cached = _CACHE.get(key)
-        if cached and time.monotonic() - cached["at"] < CACHE_SECONDS:
+        if cached and time.monotonic() - cached["at"] < cached.get("ttl", CACHE_SECONDS):
             return {**cached["result"], "cache_status": "cached"}
         failures = []
         data = None
+        provider_used = None
+        providers_checked = []
+        raw_element_count = 0
+        items = []
+        # A valid empty response from one public Overpass instance is not
+        # definitive: another instance may have a fuller replica. Try the
+        # primary and at least one fallback before returning an empty list.
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(12.0, connect=4.0),
             headers={
-                "User-Agent": "ResQLink-EmergencyResponse/1.1 (emergency facility discovery)",
+                "User-Agent": "ResQLink-EmergencyResponse/1.2 (emergency facility discovery)",
                 "Accept": "application/json",
             },
         ) as client:
-            for endpoint_index, endpoint in enumerate(OVERPASS_URLS):
+            for endpoint_index, endpoint in enumerate(OVERPASS_URLS[:2]):
                 try:
-                    # Match the 25-second Overpass query budget on the instance
-                    # confirmed by the user's Overpass Turbo test. Keep fallbacks
-                    # bounded so a failed primary does not stall facility lookup.
                     request_timeout = httpx.Timeout(
                         35.0 if endpoint_index == 0 else 12.0,
                         connect=5.0 if endpoint_index == 0 else 4.0,
@@ -179,8 +206,20 @@ out center tags;
                     candidate_data = response.json()
                     if not isinstance(candidate_data, dict) or not isinstance(candidate_data.get("elements"), list):
                         raise ValueError("Unexpected Overpass response shape.")
-                    data = candidate_data
-                    break
+                    providers_checked.append(endpoint)
+                    candidate_elements = candidate_data["elements"]
+                    candidate_items = normalize_overpass_elements(
+                        candidate_elements, latitude, longitude, radius_km
+                    )
+                    raw_element_count = max(raw_element_count, len(candidate_elements))
+                    if candidate_items:
+                        data = candidate_data
+                        items = candidate_items
+                        provider_used = endpoint
+                        break
+                    if data is None:
+                        data = candidate_data
+                        provider_used = endpoint
                 except (httpx.HTTPError, ValueError) as exc:
                     failures.append(f"{endpoint}: {type(exc).__name__}")
 
@@ -189,15 +228,34 @@ out center tags;
                 "All OpenStreetMap Overpass endpoints failed (" + "; ".join(failures) + ")."
             )
 
-        elements = data.get("elements")
-        items = normalize_overpass_elements(elements, latitude, longitude, radius_km)
+        if not items:
+            result = {
+                "count": 0,
+                "items": [],
+                "source": "OpenStreetMap contributors",
+                "attribution": "© OpenStreetMap contributors",
+                "radius_km": radius_km,
+                "raw_element_count": raw_element_count,
+                "providers_checked": providers_checked,
+                "provider_used": provider_used,
+                "note": (
+                    "No matching mapped facilities were returned by the checked providers. "
+                    "This does not mean no hospitals, colleges or emergency services exist nearby."
+                ),
+            }
+            _CACHE[key] = {"at": time.monotonic(), "result": result, "ttl": 30}
+            return {**result, "cache_status": "live_empty"}
+
         result = {
             "count": len(items),
             "items": items,
             "source": "OpenStreetMap contributors",
             "attribution": "© OpenStreetMap contributors",
             "radius_km": radius_km,
-            "note": "All discovered places are candidates and remain unverified; check official local records.",
+            "raw_element_count": raw_element_count,
+            "providers_checked": providers_checked,
+            "provider_used": provider_used,
+            "note": "OpenStreetMap places are community-mapped candidates and remain unverified; confirm service and opening status locally.",
         }
         _CACHE[key] = {"at": time.monotonic(), "result": result}
         return {**result, "cache_status": "live"}
