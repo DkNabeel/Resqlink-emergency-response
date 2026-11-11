@@ -1075,6 +1075,15 @@ async def discover_nearby_facilities(
         seen.add(key)
         combined.append(facility)
     combined.sort(key=lambda item: float(item.get("distance_km", 999)))
+    logger.info(
+        "Facility discovery completed: radius_km=%s verified=%s osm_candidates=%s raw_map_objects=%s total=%s osm_status=%s",
+        radius_km,
+        len(verified_facilities),
+        len(discovery.get("items", [])),
+        discovery.get("raw_element_count", 0),
+        len(combined),
+        osm_status,
+    )
 
     return {
         **discovery,
