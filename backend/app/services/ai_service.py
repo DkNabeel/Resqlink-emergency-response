@@ -137,8 +137,8 @@ def parse_emergency_chat_response(text):
     """Validate the structured response from the emergency-only chat model."""
     if not isinstance(text, str) or not text.strip():
         raise AIServiceError("AI provider returned an empty emergency response.")
-    cleaned = re.sub(r"^\\s*```(?:json)?\\s*", "", text.strip(), flags=re.I)
-    cleaned = re.sub(r"\\s*```\\s*$", "", cleaned)
+    cleaned = re.sub(r"^\s*```(?:json)?\s*", "", text.strip(), flags=re.I)
+    cleaned = re.sub(r"\s*```\s*$", "", cleaned)
     try:
         payload = json.loads(cleaned)
     except json.JSONDecodeError as exc:
@@ -239,7 +239,7 @@ def respond_to_emergency_chat(
     messages.append({
         "role": "user",
         "content": "Respond to this latest message in language code "
-        + language + ":\\n" + message.strip(),
+        + language + ":\n" + message.strip(),
     })
 
     headers = {
