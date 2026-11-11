@@ -72,12 +72,26 @@ class FacilityDiscoveryTests(unittest.TestCase):
         self.assertEqual(result[0]["verification_status"], "unverified")
         self.assertIn("distance_km", result[0])
 
-    def test_unclassified_or_out_of_radius_places_are_excluded(self):
+    def test_non_facility_and_out_of_radius_places_are_excluded(self):
         result = normalize_overpass_elements([
-            {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5, "tags": {"amenity": "school"}},
+            {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5, "tags": {"amenity": "restaurant"}},
             {"type": "node", "id": 2, "lat": 13.9, "lon": 77.5, "tags": {"name": "Far Hospital", "amenity": "hospital"}},
         ], 12.9, 77.5, 2)
         self.assertEqual(result, [])
+
+    def test_includes_colleges_clinics_police_and_fire_stations(self):
+        result = normalize_overpass_elements([
+            {"type": "node", "id": 10, "lat": 12.9, "lon": 77.5, "tags": {"name": "City Police", "amenity": "police"}},
+            {"type": "node", "id": 11, "lat": 12.901, "lon": 77.501, "tags": {"name": "Fire Station", "amenity": "fire_station"}},
+            {"type": "node", "id": 12, "lat": 12.902, "lon": 77.502, "tags": {"name": "Community Clinic", "healthcare": "clinic"}},
+            {"type": "node", "id": 13, "lat": 12.903, "lon": 77.503, "tags": {"name": "Engineering College", "amenity": "college"}},
+            {"type": "node", "id": 14, "lat": 12.904, "lon": 77.504, "tags": {"name": "University", "amenity": "university"}},
+            {"type": "node", "id": 15, "lat": 12.905, "lon": 77.505, "tags": {"name": "District Hospital", "amenity": "hospital"}},
+        ], 12.9, 77.5, 5)
+        self.assertEqual(
+            {item["facility_type"] for item in result},
+            {"police", "fire_station", "clinic", "college", "hospital"},
+        )
 
     def test_keeps_unnamed_facilities_with_address_or_osm_id(self):
         result = normalize_overpass_elements([
@@ -116,6 +130,50 @@ class FacilityDiscoveryTests(unittest.TestCase):
             len(normalize_overpass_elements([place, place], 12.9, 77.5, 5)),
             1,
         )
+
+    def test_empty_primary_overpass_response_tries_fallback_provider(self):
+        import asyncio
+        from unittest.mock import patch
+        from app.services import facility_discovery_service as service
+
+        class FakeResponse:
+            def __init__(self, elements):
+                self.payload = {"elements": elements}
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return self.payload
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                return None
+            async def post(self, url, data, timeout=None):
+                self.calls.append((url, data["data"], timeout))
+                if len(self.calls) == 1:
+                    return FakeResponse([])
+                return FakeResponse([{
+                    "type": "node", "id": 77, "lat": 12.9, "lon": 77.5,
+                    "tags": {"name": "Puttur District Hospital", "amenity": "hospital"},
+                }])
+
+        fake = FakeClient()
+        service.clear_discovery_cache()
+        try:
+            with patch("app.services.facility_discovery_service.httpx.AsyncClient", return_value=fake):
+                result = asyncio.run(service.discover_facilities(12.9, 77.5, 5))
+        finally:
+            service.clear_discovery_cache()
+
+        self.assertEqual(len(fake.calls), 2)
+        self.assertIn("college|university", fake.calls[0][1])
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["name"], "Puttur District Hospital")
+        self.assertEqual(result["cache_status"], "live")
+        self.assertEqual(result["provider_used"], service.OVERPASS_URLS[1])
 
     def test_fails_over_to_another_overpass_instance_after_http_502(self):
         import asyncio
@@ -166,7 +224,7 @@ class FacilityDiscoveryTests(unittest.TestCase):
         self.assertEqual(fake.timeouts[0].read, 35.0)
         self.assertEqual(fake.timeouts[1].read, 12.0)
         self.assertEqual(result["items"], [])
-        self.assertEqual(result["cache_status"], "live")
+        self.assertEqual(result["cache_status"], "live_empty")
 
 
 if __name__ == "__main__":
