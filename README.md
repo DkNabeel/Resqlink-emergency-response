@@ -41,7 +41,7 @@ API documentation: http://127.0.0.1:8000/docs
 | DELETE | /facilities/{facility_id} | Delete a facility |
 | POST | /facilities/{facility_id}/verification | Verify/unverify a facility with admin token |
 | GET | /facilities/nearby | Search facilities by straight-line distance |
-| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |\n| POST | /routes/traffic | Traffic-aware driving ETA via Google Routes API |\n| GET | /facilities/discover | Find nearby OpenStreetMap facility candidates (unverified) |
+| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |\n| POST | /routes/traffic | Road-based driving ETA via OpenRouteService (no live traffic) |\n| GET | /facilities/discover | Find nearby OpenStreetMap facility candidates (unverified) |
 | GET | /offline/package | Download language-specific guides, 112, nearby verified facilities and location-matched alert snapshot; supports ETag/304 conditional refresh |
 
 ## Emergency request example
@@ -108,7 +108,7 @@ The backend retrieves RSS and linked CAP detail documents and stores sender, eve
 - IP geolocation is approximate and disabled by default.
 - A saved GPS position may become stale and must be checked using its recorded timestamp.
 - `/offline/package` returns a location-scoped data snapshot and supports `ETag` / `If-None-Match` so a mobile client can skip downloading an unchanged package. The mobile app must store and use the last successful response locally; the backend cannot retrieve live government feeds when the phone has no network. A `304 Not Modified` response means the client should retain its previously saved package.
-- Traffic-aware ETA is available at POST /routes/traffic when GOOGLE_MAPS_ROUTES_API_KEY is configured. Google Routes API requires billing and traffic-aware requests are billed at a higher rate than traffic-unaware routes.\n- GET /facilities/discover searches OpenStreetMap community-mapped candidates. Results are never stored or verified automatically; confirm them from current official records before relying on them.
+- A road-based driving ETA is available at POST /routes/traffic when OPENROUTESERVICE_API_KEY is configured. It uses OpenRouteService (HeiGIT) road data and does not include live traffic or congestion.\n- GET /facilities/discover searches OpenStreetMap community-mapped candidates. Results are never stored or verified automatically; confirm them from current official records before relying on them.
 - Push notification delivery is not guaranteed and must not replace official warning channels.
 
 ## Tests
@@ -130,12 +130,13 @@ See .env.example. Important settings:
 - IP_GEOLOCATION_ENABLED and IP_GEOLOCATION_URL_TEMPLATE
 - FACILITY_ADMIN_TOKEN (protects facility verification endpoint)
 - WEATHER_CACHE_TTL_SECONDS
+- OPENROUTESERVICE_API_KEY (optional driving-route provider)
 - LOG_LEVEL
 
 
-## Traffic-aware routes
+## Driving routes
 
-POST /routes/traffic calculates one driving route with traffic-aware ETA and distance. Configure GOOGLE_MAPS_ROUTES_API_KEY on the backend, enable the Google Routes API in Google Cloud and configure billing and quota restrictions. Never place the key in the mobile application. Traffic-aware requests can have higher billing than traffic-unaware routing; see Google's official Routes API traffic options and pricing documentation.
+POST /routes/traffic calculates one driving route with road distance and estimated travel time using OpenRouteService (HeiGIT). Configure OPENROUTESERVICE_API_KEY in backend/.env. Keep the key on the backend and never place it in the mobile application. This provider returns a road-network estimate; it does not provide live traffic conditions or congestion delays.
 
 ## Nearby facility discovery
 
