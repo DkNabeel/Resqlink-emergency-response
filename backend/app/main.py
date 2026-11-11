@@ -39,7 +39,7 @@ from app.services.emergency_service import (
     build_emergency_response,
 )
 from app.services.geospatial_service import haversine_km, match_alert_location
-from app.services.ai_service import AIServiceError, analyze_emergency_with_groq
+from app.services.ai_service import AIServiceError, analyze_emergency_with_groq, respond_to_emergency_chat
 from app.services.traffic_service import TrafficNotConfigured, TrafficServiceError, get_traffic_route
 from app.services.facility_discovery_service import discover_facilities
 from app.services.location_service import estimate_location_from_ip
@@ -120,6 +120,30 @@ class EmergencyRequest(BaseModel):
     state: Optional[str] = Field(default=None, max_length=120)
     include_weather: bool = False
     weather_forecast_hours: int = Field(default=6, ge=1, le=24)
+
+
+class EmergencyChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=1600)
+
+
+class EmergencyChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    language: Literal["en", "hi", "kn"] = "en"
+    conversation_history: list[EmergencyChatHistoryMessage] = Field(default_factory=list, max_length=10)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    radius_km: float = Field(default=10, gt=0, le=20)
+    city: Optional[str] = Field(default=None, max_length=120)
+    district: Optional[str] = Field(default=None, max_length=120)
+    state: Optional[str] = Field(default=None, max_length=120)
+
+    @field_validator("message")
+    @classmethod
+    def chat_message_must_not_be_blank(cls, value):
+        if not value.strip():
+            raise ValueError("Emergency message cannot be blank.")
+        return value.strip()
 
 
 class TrafficRouteRequest(BaseModel):
@@ -252,19 +276,181 @@ def system_status():
                 "fallback_model": os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b"),
                 "integration": "chat_completions_json_mode",
                 "billing_mode": "free_tier_rate_limited",
-                "note": "Optional Groq classification; local NLP and curated emergency guidance remain available if AI is unavailable.",
+                "note": "Groq powers dynamic emergency-only chat at /emergency/chat; the original /emergency classification endpoint remains available for compatibility.",
             },
         },
         "mobile": {
             "native_app": "expo_react_native_source_added",
-            "foreground_gps_permission": "implemented",
-            "emergency_submission": "implemented",
-            "on_device_offline_cache": "sqlite_cache_implemented",
-            "offline_safety_guidance": "implemented",
-            "offline_map_tiles": "not_implemented",
-            "push_notifications": "not_implemented",
-            "note": "Source implementation is present; device build, installation and end-to-end validation are still required.",
+            "foreground_gps_permission": "required_by_app",
+            "notification_permission": "required_by_app",
+            "dynamic_emergency_only_groq_chat": "implemented_source_requires_live_test",
+            "online_map_and_facility_routes": "implemented_source_requires_device_test",
+            "weather_popup": "implemented_source_requires_device_test",
+            "nearby_facility_offline_package": "included_when_openstreetmap_discovery_succeeds",
+            "on_device_offline_cache": "sqlite_latest_package_cache",
+            "offline_safety_guidance": "multilingual_keyword_fallback",
+            "background_location_refresh": "best_effort_requires_background_permission_and_native_build",
+            "local_sachet_alert_notifications": "best_effort_requires_background_location_and_matched_alerts",
+            "remote_push_notifications": "not_implemented",
+            "offline_map_tiles_and_road_routing": "not_implemented",
+            "note": "Source implementation is present; background cadence is OS-controlled and all features still require native-device validation.",
         },
+    }
+
+
+@app.post("/emergency/chat")
+async def emergency_chat(request: EmergencyChatRequest):
+    """Dynamic, emergency-only Groq conversation with official/local context."""
+    if (request.latitude is None) != (request.longitude is None):
+        raise HTTPException(status_code=422, detail="Send both latitude and longitude, or neither.")
+
+    history = [
+        {"role": item.role, "content": item.content}
+        for item in request.conversation_history
+    ]
+    context_text = "\n".join(
+        [item["content"] for item in history[-8:]] + [request.message]
+    )
+    local_result = build_emergency_response(context_text, request.language)
+    local_type = local_result.get("emergency_type", "unknown")
+    trusted_guidance = GUIDANCE[request.language].get(
+        local_type, GUIDANCE[request.language]["unknown"]
+    )
+
+    confirmed_alerts = []
+    unverified_alerts = []
+    nearby_facilities = []
+    weather_context = None
+    has_location = request.latitude is not None and request.longitude is not None
+
+    if has_location:
+        for alert in get_active_alerts(200):
+            match = match_alert_location(
+                alert, request.latitude, request.longitude,
+                city=request.city, district=request.district, state=request.state,
+            )
+            if match["matched"] is True:
+                confirmed_alerts.append({
+                    "title": alert.get("title"),
+                    "event": alert.get("event"),
+                    "severity": alert.get("severity"),
+                    "description": alert.get("description"),
+                    "area_description": alert.get("area_description"),
+                    "expires_at": alert.get("expires_at"),
+                    "source_url": alert.get("source_url"),
+                    "location_match": match,
+                    "source": "SACHET",
+                })
+            elif match["matched"] is None:
+                unverified_alerts.append({
+                    "title": alert.get("title"),
+                    "event": alert.get("event"),
+                    "severity": alert.get("severity"),
+                    "area_description": alert.get("area_description"),
+                    "expires_at": alert.get("expires_at"),
+                    "source_url": alert.get("source_url"),
+                    "location_match": match,
+                    "source": "SACHET",
+                    "warning": "Location relevance is unverified.",
+                })
+
+        suggested_types = set(local_result.get("recommended_facility_types", []))
+        for facility in get_all_facilities(verification_status="verified", limit=1000):
+            distance = haversine_km(
+                request.latitude, request.longitude,
+                float(facility["latitude"]), float(facility["longitude"]),
+            )
+            if distance <= request.radius_km and (
+                not suggested_types or facility["facility_type"] in suggested_types
+            ):
+                nearby_facilities.append({
+                    **facility, "distance_km": round(distance, 2),
+                    "verification_status": "verified",
+                })
+
+    ai_analysis = {"status": "disabled"}
+    ai_enabled = os.getenv("AI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    if ai_enabled and os.getenv("GROQ_API_KEY", "").strip():
+        timeout_seconds = max(20, min(32, int(os.getenv("AI_TOTAL_TIMEOUT_SECONDS", "30"))))
+        try:
+            ai_analysis = await asyncio.wait_for(
+                asyncio.to_thread(
+                    respond_to_emergency_chat,
+                    request.message,
+                    request.language,
+                    history,
+                    local_type,
+                    trusted_guidance,
+                    confirmed_alerts,
+                    weather_context,
+                    nearby_facilities,
+                ),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            ai_analysis = {"status": "timeout", "message": "Groq emergency chat timed out."}
+        except AIServiceError as exc:
+            logger.warning("Groq emergency chat unavailable: %s", exc)
+            ai_analysis = {"status": "unavailable", "message": str(exc)[:240]}
+        except Exception as exc:
+            logger.exception("Unexpected Groq emergency-chat failure")
+            ai_analysis = {"status": "error", "message": type(exc).__name__}
+
+    if ai_analysis.get("status") == "connected":
+        in_scope = bool(ai_analysis.get("in_scope"))
+        reply = ai_analysis.get("reply", "")
+        emergency_type = ai_analysis.get("emergency_type", local_type)
+        urgency = ai_analysis.get("urgency", "unknown")
+        follow_up = ai_analysis.get("follow_up_question")
+    else:
+        in_scope = local_type != "unknown"
+        emergency_type = local_type
+        urgency = local_result.get("urgency", "unknown")
+        reply = (
+            "I can help with this emergency, but the AI service is unavailable. "
+            + " ".join(trusted_guidance)
+            if in_scope else
+            "I can only help with emergency situations. Please describe the danger you are facing."
+        )
+        follow_up = None
+
+    if not in_scope:
+        return {
+            "status": "processed",
+            "in_scope": False,
+            "reply": reply,
+            "follow_up_question": follow_up,
+            "ai_provider": "Groq",
+            "ai_status": ai_analysis.get("status", "unknown"),
+            "ai_analysis": ai_analysis,
+            "emergency_contact": EMERGENCY_CONTACT_INDIA,
+        }
+
+    return {
+        "status": "processed",
+        "in_scope": True,
+        "reply": reply,
+        "follow_up_question": follow_up,
+        "emergency_type": emergency_type,
+        "urgency": urgency,
+        "ai_provider": "Groq",
+        "ai_status": ai_analysis.get("status", "unknown"),
+        "ai_analysis": ai_analysis,
+        "local_nlp_type": local_type,
+        "emergency_contact": EMERGENCY_CONTACT_INDIA,
+        "nearby_facilities": nearby_facilities,
+        "nearby_alerts": confirmed_alerts,
+        "unverified_alerts": unverified_alerts,
+        "location_used": (
+            {"latitude": request.latitude, "longitude": request.longitude, "radius_km": request.radius_km}
+            if has_location else None
+        ),
+        "weather_context": weather_context,
+        "data_limitations": [
+            "Unverified OpenStreetMap candidates must be checked before relying on them.",
+            "A road-network route estimate is not a hazard-safe-route guarantee.",
+            "Only positively matched SACHET alerts are treated as confirmed local alerts.",
+        ],
     }
 
 
@@ -647,7 +833,7 @@ def _etag_matches(if_none_match, current_etag):
 
 
 @app.get("/offline/package")
-def create_offline_package(
+async def create_offline_package(
     response: Response,
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
@@ -678,6 +864,20 @@ def create_offline_package(
                 "distance_km": round(distance, 2),
             })
     nearby_verified_facilities.sort(key=lambda item: item["distance_km"])
+
+    # Include nearby OpenStreetMap candidates in the package so the phone can
+    # save them locally. They remain explicitly unverified and are never
+    # promoted to verified facilities automatically.
+    nearby_discovered_facilities = []
+    facility_discovery_status = "unavailable"
+    try:
+        discovery = await discover_facilities(
+            latitude, longitude, min(20, radius_km)
+        )
+        nearby_discovered_facilities = discovery.get("items", [])
+        facility_discovery_status = "available"
+    except Exception as exc:
+        logger.warning("Facility discovery unavailable for offline package: %s", type(exc).__name__)
 
     local_alerts = []
     unverified_alerts = []
@@ -732,12 +932,15 @@ def create_offline_package(
         "emergency_contact": EMERGENCY_CONTACT_INDIA,
         "guidance_catalog": guidance_catalog,
         "nearby_verified_facilities": nearby_verified_facilities,
+        "nearby_discovered_facilities": nearby_discovered_facilities,
+        "facility_discovery_status": facility_discovery_status,
         "location_matched_official_alerts": local_alerts,
         "unverified_location_alerts": unverified_alerts,
         "offline_capabilities": {
             "multilingual_safety_guides": True,
             "emergency_contact_number": True,
             "verified_facility_directory": True,
+            "unverified_osm_facility_candidates": True,
             "downloaded_official_alert_snapshot": True,
             "map_tiles_included": False,
             "live_alert_updates": False,
@@ -748,7 +951,7 @@ def create_offline_package(
         "important": [
             "This is a snapshot generated at the stated time; new alerts cannot arrive while offline.",
             "Check each alert's own expiry and status; the package has no guaranteed validity period.",
-            "Only facilities marked verified are included. Verification depends on the source and note recorded by the project administrator.",
+            "Verified facilities and separately labelled unverified OpenStreetMap candidates are included. Check candidate details before relying on them.",
             "Map tiles, live routing, weather and traffic are not bundled.",
             "Never treat absence of an alert or facility as proof that an area is safe.",
         ],

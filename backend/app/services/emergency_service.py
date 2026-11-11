@@ -60,9 +60,9 @@ TERMS = {
         "kn": ["ರಸ್ತೆ ಅಪಘಾತ", "ವಾಹನ ಡಿಕ್ಕಿ", "ಬೈಕ್ ಅಪಘಾತ", "ಅಪಘಾತ"],
     },
     "violence": {
-        "en": ["attacker", "being attacked", "assault", "armed person", "physical attack"],
-        "hi": ["हमला", "मारपीट", "धमकी", "हथियार"],
-        "kn": ["ದಾಳಿ", "ಹಲ್ಲೆ", "ಬೆದರಿಕೆ", "ಆಯುಧ"],
+        "en": ["attacker", "being attacked", "assault", "armed person", "physical attack", "gunfire", "gunshots", "shooting", "war", "war zone", "armed conflict", "bombing", "air raid", "shelling", "missile", "civil unrest"],
+        "hi": ["हमला", "मारपीट", "धमकी", "हथियार", "युद्ध", "गोलीबारी", "बमबारी", "हवाई हमला"],
+        "kn": ["ದಾಳಿ", "ಹಲ್ಲೆ", "ಬೆದರಿಕೆ", "ಆಯುಧ", "ಯುದ್ಧ", "ಗುಂಡಿನ ದಾಳಿ", "ಬಾಂಬ್ ದಾಳಿ"],
     },
 }
 

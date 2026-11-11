@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -11,15 +12,23 @@ import {
   TextInput,
   View,
 } from "react-native";
+import MapView, { Marker } from "react-native-maps";
 import * as Location from "expo-location";
+import "./src/background";
+import { startBackgroundMonitoring, setBackgroundLanguage, getLastBackgroundLocation } from "./src/background";
 import {
   getOfflineGuidance,
   getSystemStatus,
   isApiConfigured,
-  sendEmergency,
+  sendEmergencyChat,
+  getNearbyWeather,
+  getNearbyFacilities,
+  cacheNearbyFacilities,
   downloadOfflinePackage,
   type EmergencyResult,
+  type NearbyFacility,
   type OfflinePackage,
+  type WeatherSnapshot,
 } from "./src/api";
 import { getLatestOfflinePackage } from "./src/cache";
 
@@ -85,15 +94,56 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
+  const [geoDetails, setGeoDetails] = useState<{ city?: string; district?: string; state?: string }>({});
   const [offlinePackage, setOfflinePackage] = useState<OfflinePackage | null>(null);
   const [result, setResult] = useState<EmergencyResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [permissionsReady, setPermissionsReady] = useState(false);
+  const [permissionBusy, setPermissionBusy] = useState(false);
+  const [permissionMessage, setPermissionMessage] = useState("ResQLink needs location and notification permissions to provide emergency assistance.");
+  const [backgroundMonitoringReady, setBackgroundMonitoringReady] = useState(false);
   const [status, setStatus] = useState("Ready to help");
   const [locationStatus, setLocationStatus] = useState("Location has not been requested");
   const [backendConnection, setBackendConnection] = useState<"checking" | "connected" | "unreachable">("checking");
   const [backendAiConfigured, setBackendAiConfigured] = useState<boolean | null>(null);
+  const [chatHistory, setChatHistory] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [weatherVisible, setWeatherVisible] = useState(false);
+  const [weatherBusy, setWeatherBusy] = useState(false);
+  const [weatherData, setWeatherData] = useState<WeatherSnapshot | null>(null);
 
   const copy = COPY[language];
+
+  async function enableRequiredPermissions() {
+    setPermissionBusy(true);
+    try {
+      const permissions = await startBackgroundMonitoring();
+      setPermissionMessage(permissions.message);
+      setBackgroundMonitoringReady(permissions.backgroundEnabled);
+      const ready = permissions.locationEnabled && permissions.notificationsEnabled;
+      setPermissionsReady(ready);
+      if (ready) {
+        setStatus(permissions.message);
+        // Capture GPS and seed the first offline package as soon as onboarding succeeds.
+        void (async () => {
+          try {
+            const point = await obtainLocation();
+            if (isApiConfigured()) {
+              const downloaded = await downloadOfflinePackage(point, language);
+              setOfflinePackage(downloaded.payload);
+              setStatus("GPS ready · nearby emergency information saved for offline use");
+            }
+          } catch (error) {
+            setLocationStatus(error instanceof Error ? error.message : "GPS or offline package is not ready yet.");
+          }
+        })();
+      }
+    } catch (error) {
+      setPermissionsReady(false);
+      setPermissionMessage(error instanceof Error ? error.message : "Please enable location and notification permissions in Settings.");
+    } finally {
+      setPermissionBusy(false);
+    }
+  }
 
   async function checkBackendConnection() {
     setBackendConnection("checking");
@@ -108,7 +158,20 @@ export default function App() {
   }
 
   useEffect(() => {
+    setBackgroundLanguage(language).catch(() => {});
+  }, [language]);
+
+  useEffect(() => {
     let active = true;
+    enableRequiredPermissions().catch(() => {});
+    getLastBackgroundLocation()
+      .then((saved) => {
+        if (active && saved && !coordinates) {
+          setCoordinates({ latitude: saved.latitude, longitude: saved.longitude });
+          setLocationStatus("Using last saved GPS position · " + new Date(saved.recorded_at ?? Date.now()).toLocaleString());
+        }
+      })
+      .catch(() => {});
     getLatestOfflinePackage()
       .then((cached) => {
         if (active && cached) setOfflinePackage(cached.payload);
@@ -139,6 +202,19 @@ export default function App() {
     const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
     setCoordinates(point);
+    try {
+      const addresses = await Location.reverseGeocodeAsync(point);
+      const address = addresses[0];
+      if (address) {
+        setGeoDetails({
+          city: address.city ?? address.subregion ?? undefined,
+          district: address.district ?? address.subregion ?? address.city ?? undefined,
+          state: address.region ?? undefined,
+        });
+      }
+    } catch {
+      // GPS coordinates remain usable when reverse geocoding is unavailable.
+    }
     setLocationStatus("GPS location received · accuracy about " + Math.round(position.coords.accuracy ?? 0) + " m");
     return point;
   }
@@ -178,7 +254,8 @@ export default function App() {
   }
 
   async function handleEmergency() {
-    if (!message.trim()) {
+    const submittedMessage = message.trim();
+    if (!submittedMessage) {
       setStatus("Please describe the emergency first");
       return;
     }
@@ -188,27 +265,116 @@ export default function App() {
       let point = coordinates;
       if (!point) {
         try { point = await obtainLocation(); }
-        catch { setLocationStatus("Sending text report without GPS coordinates"); }
+        catch {
+          const saved = await getLastBackgroundLocation();
+          if (saved) {
+            point = { latitude: saved.latitude, longitude: saved.longitude };
+            setCoordinates(point);
+            setLocationStatus("Using the last saved GPS position; it may be out of date.");
+          } else {
+            setLocationStatus("Sending report without current GPS coordinates");
+          }
+        }
       }
-      const response = await sendEmergency({
-        message: message.trim(),
+      const response = await sendEmergencyChat({
+        message: submittedMessage,
         language,
+        conversation_history: chatHistory.slice(-10),
         ...(point ? { latitude: point.latitude, longitude: point.longitude } : {}),
         radius_km: 10,
-        include_weather: true,
-        use_ai: true,
+        ...geoDetails,
       });
       setResult(response);
-      setStatus("Emergency analysis completed");
+      if (response.in_scope) {
+        if (point) {
+          // Keep the urgent Groq reply fast; load OSM places separately.
+          void getNearbyFacilities(point, 10).then(async (found) => {
+            const candidates = found.items ?? [];
+            setResult((current) => {
+              if (!current || !current.in_scope) return current;
+              const existing = current.nearby_facilities ?? [];
+              const keys = new Set(existing.map((item) => [item.name, item.latitude, item.longitude].join("|")));
+              const additional = candidates.filter((item) => !keys.has([item.name, item.latitude, item.longitude].join("|")));
+              return { ...current, nearby_facilities: [...existing, ...additional] };
+            });
+            await cacheNearbyFacilities(candidates).catch(() => {});
+          }).catch(() => {});
+        }
+        setChatHistory((current) => [
+          ...current,
+          { role: "user" as const, content: submittedMessage },
+          ...(response.reply ? [{ role: "assistant" as const, content: response.reply }] : []),
+        ].slice(-10));
+        setStatus("Emergency response received");
+      } else {
+        setStatus("ResQLink only handles emergency-related assistance");
+      }
+      setMessage("");
+      setSelectedPrompt("");
     } catch (error) {
       const cached = offlinePackage ?? await getLatestOfflinePackage().then((x) => x?.payload ?? null).catch(() => null);
-      const fallback = getOfflineGuidance(message, language, cached);
+      const fallback = getOfflineGuidance(submittedMessage, language, cached);
       const reason = error instanceof Error ? error.message : "Unable to reach the backend.";
       setBackendConnection("unreachable");
-      setResult({ ...fallback, diagnostic_message: reason });
-      setStatus("Backend unreachable · showing on-device guidance. Check Wi-Fi and mobile/.env.");
+      const offlineReply = fallback.reply ?? (fallback.guidance ?? []).join("\n");
+      setResult({ ...fallback, reply: offlineReply, diagnostic_message: reason });
+      if (fallback.in_scope) {
+        setChatHistory((current) => [
+          ...current,
+          { role: "user" as const, content: submittedMessage },
+          { role: "assistant" as const, content: offlineReply },
+        ].slice(-10));
+        setStatus("Offline keyword guidance · AI and live data unavailable");
+      } else {
+        setStatus("ResQLink only handles emergency-related assistance");
+      }
+      setMessage("");
+      setSelectedPrompt("");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function openWeather() {
+    setWeatherVisible(true);
+    setWeatherBusy(true);
+    try {
+      const point = coordinates ?? await obtainLocation();
+      const snapshot = await getNearbyWeather(point);
+      setWeatherData(snapshot);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Weather is unavailable");
+    } finally {
+      setWeatherBusy(false);
+    }
+  }
+
+  async function openFacilityRoute(facility: NearbyFacility) {
+    if (typeof facility.latitude !== "number" || typeof facility.longitude !== "number") {
+      setStatus("This facility has no usable map coordinates");
+      return;
+    }
+    const destination = facility.latitude + "," + facility.longitude;
+    const origin = coordinates ? "&origin=" + coordinates.latitude + "," + coordinates.longitude : "";
+    const url = "https://www.google.com/maps/dir/?api=1" + origin
+      + "&destination=" + destination + "&travelmode=driving";
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setStatus("Unable to open the map app. Check your internet connection.");
+    }
+  }
+
+  async function callFacility(facility: NearbyFacility) {
+    const phone = String(facility.phone ?? "").replace(/[^0-9+]/g, "");
+    if (!phone || phone.replace(/\D/g, "").length < 5) {
+      setStatus("No usable phone number is listed for this facility.");
+      return;
+    }
+    try {
+      await Linking.openURL("tel:" + phone);
+    } catch {
+      setStatus("Unable to open the phone dialer.");
     }
   }
 
@@ -232,6 +398,36 @@ export default function App() {
   const aiError = typeof ai?.message === "string" ? ai.message : "";
   const networkError = typeof result?.diagnostic_message === "string" ? result.diagnostic_message : "";
   const emergencyType = String(result?.emergency_type ?? "unknown").replaceAll("_", " ");
+  const packageFacilities = [
+    ...(offlinePackage?.nearby_verified_facilities ?? []),
+    ...(offlinePackage?.nearby_discovered_facilities ?? []),
+  ];
+  const facilities: NearbyFacility[] = result?.nearby_facilities?.length
+    ? result.nearby_facilities
+    : packageFacilities;
+
+  if (!permissionsReady) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="dark-content" />
+        <View style={styles.permissionGate}>
+          <View style={styles.logo}><Text style={styles.logoText}>R</Text></View>
+          <Text style={styles.permissionTitle}>Enable ResQLink protection</Text>
+          <Text style={styles.permissionBody}>
+            ResQLink needs location to identify nearby government alerts and emergency facilities, and notifications to warn you about relevant disasters.
+          </Text>
+          <Text style={styles.permissionMessage}>{permissionMessage}</Text>
+          <Pressable onPress={enableRequiredPermissions} disabled={permissionBusy} style={styles.permissionButton}>
+            {permissionBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.permissionButtonText}>Allow required permissions</Text>}
+          </Pressable>
+          <Pressable onPress={() => Linking.openSettings()} style={styles.permissionSettings}>
+            <Text style={styles.permissionSettingsText}>Open phone Settings</Text>
+          </Pressable>
+          <Text style={styles.permissionFootnote}>Background location refresh is best-effort and requires a compatible native app build. Foreground emergency assistance requires location and notifications.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -256,6 +452,11 @@ export default function App() {
           <Text style={styles.heroTitle}>{copy.title}</Text>
           <Text style={styles.heroSub}>{copy.subtitle}</Text>
         </View>
+
+        <Pressable onPress={openWeather} style={styles.weatherPill}>
+          <Text style={styles.weatherPillText}>☀  Local weather · temperature & humidity</Text>
+          <Text style={styles.weatherPillArrow}>↗</Text>
+        </Pressable>
 
         <Pressable onPress={callEmergencyNumber} style={({ pressed }) => [styles.sosCard, pressed && styles.pressed]}>
           <View style={styles.sosIcon}><Text style={styles.sosIconText}>112</Text></View>
@@ -328,12 +529,57 @@ export default function App() {
           </Pressable>
         </View>
 
+        {coordinates ? (
+          <View style={styles.mapCard}>
+            <Text style={styles.sectionTitle}>Your current area</Text>
+            <MapView
+              style={styles.map}
+              initialRegion={{
+                latitude: coordinates.latitude,
+                longitude: coordinates.longitude,
+                latitudeDelta: 0.025,
+                longitudeDelta: 0.025,
+              }}
+              region={{
+                latitude: coordinates.latitude,
+                longitude: coordinates.longitude,
+                latitudeDelta: 0.025,
+                longitudeDelta: 0.025,
+              }}
+              showsUserLocation
+              showsMyLocationButton
+            >
+              <Marker coordinate={coordinates} title="Your location" pinColor="#147A6A" />
+              {facilities.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number").map((item, index) => (
+                <Marker
+                  key={String(item.name ?? "facility") + "-" + index}
+                  coordinate={{ latitude: item.latitude as number, longitude: item.longitude as number }}
+                  title={item.name ?? "Emergency facility"}
+                  description={(item.facility_type ?? "Facility").replaceAll("_", " ") + " · " + (item.verification_status ?? "unverified")}
+                />
+              ))}
+            </MapView>
+            <Text style={styles.mapNote}>Map routes are not verified against live disaster hazards. Follow official evacuation instructions.</Text>
+          </View>
+        ) : null}
+
         <Pressable onPress={handleEmergency} disabled={busy} style={({ pressed }) => [styles.analyzeButton, pressed && styles.pressed, busy && styles.disabled]}>
           {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.analyzeIcon}>✦</Text>}
           <Text style={styles.analyzeText}>{busy ? "Analyzing..." : copy.analyze}</Text>
           {!busy && <Text style={styles.analyzeArrow}>→</Text>}
         </Pressable>
-        <Text style={styles.secureNote}>AI-assisted classification · Curated safety instructions · Location-aware context</Text>
+        <Text style={styles.secureNote}>Emergency-only AI chat · GPS context · Government alerts and nearby services</Text>
+
+        {chatHistory.length > 0 ? (
+          <View style={styles.chatThread}>
+            <Text style={styles.sectionTitle}>Emergency conversation</Text>
+            {chatHistory.map((item, index) => (
+              <View key={String(index)} style={[styles.chatBubble, item.role === "user" ? styles.chatUser : styles.chatAssistant]}>
+                <Text style={[styles.chatBubbleText, item.role === "user" ? styles.chatUserText : styles.chatAssistantText]}>{item.content}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {result ? (
           <View style={styles.resultCard}>
@@ -348,14 +594,17 @@ export default function App() {
               </View>
             </View>
             <Text style={styles.sourceText}>{aiLabel}</Text>
-            {ai?.short_summary ? <Text style={styles.summary}>{ai.short_summary}</Text> : null}
+            {result.in_scope === false
+              ? <Text style={styles.summary}>{result.reply ?? "ResQLink only handles emergency-related assistance."}</Text>
+              : null}
+            {result.follow_up_question ? <Text style={styles.followUp}>Follow-up: {result.follow_up_question}</Text> : null}
             {networkError ? <Text style={styles.diagnosticWarning}>Backend connection failed: {networkError}</Text> : null}
             {aiError && !aiConnected ? <Text style={styles.diagnosticWarning}>Groq AI unavailable: {aiError}</Text> : null}
             {!aiConnected && !aiError && !networkError && backendConnection === "connected" && backendAiConfigured === false
               ? <Text style={styles.diagnosticWarning}>The backend is reachable, but GROQ_API_KEY is not configured on the server.</Text>
               : null}
             <View style={styles.resultDivider} />
-            <Text style={styles.guidanceTitle}>Immediate safety guidance</Text>
+            {instructions.length > 0 ? <Text style={styles.guidanceTitle}>Immediate safety guidance</Text> : null}
             {instructions.map((instruction, index) => (
               <View style={styles.instructionRow} key={String(index)}>
                 <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{index + 1}</Text></View>
@@ -363,8 +612,38 @@ export default function App() {
               </View>
             ))}
             <Text style={styles.safetyNotice}>{result.safety_notice ?? "Follow official emergency responder instructions."}</Text>
-            {Array.isArray(result.nearby_facilities) && result.nearby_facilities.length > 0 ? <Text style={styles.sourceText}>Nearby verified facilities: {result.nearby_facilities.length}</Text> : null}
+            {result.nearby_alerts && result.nearby_alerts.length > 0 ? <Text style={styles.sourceText}>Location-matched government alerts (check match precision): {result.nearby_alerts.length}</Text> : null}
+            {result.unverified_alerts && result.unverified_alerts.length > 0 ? <Text style={styles.diagnosticWarning}>{result.unverified_alerts.length} government alert(s) could not be confirmed for your exact location. Review their official source before acting.</Text> : null}
             {result.weather_context && typeof result.weather_context === "object" ? <Text style={styles.sourceText}>Weather context: {String((result.weather_context as { status?: string }).status ?? "available")}</Text> : null}
+          </View>
+        ) : null}
+
+        {facilities.length > 0 ? (
+          <View style={styles.facilityCard}>
+            <Text style={styles.sectionTitle}>Nearby emergency facilities</Text>
+            <Text style={styles.facilityHint}>Verified records and community-mapped candidates are labelled separately.</Text>
+            {facilities.slice(0, 12).map((facility, index) => (
+              <View key={String(facility.name ?? "facility") + "-" + index} style={styles.facilityRow}>
+                <View style={styles.facilityCopy}>
+                  <Text style={styles.facilityName}>{facility.name ?? "Emergency facility"}</Text>
+                  <Text style={styles.facilityMeta}>
+                    {(facility.facility_type ?? "facility").replaceAll("_", " ")}
+                    {typeof facility.distance_km === "number" ? " · " + facility.distance_km.toFixed(1) + " km" : ""}
+                  </Text>
+                  <Text style={facility.verification_status === "verified" ? styles.verifiedText : styles.unverifiedText}>
+                    {facility.verification_status === "verified" ? "Verified project record" : "Unverified map candidate"}
+                  </Text>
+                </View>
+                {facility.phone ? (
+                  <Pressable onPress={() => callFacility(facility)} style={styles.callFacilityButton}>
+                    <Text style={styles.callFacilityText}>Call</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable onPress={() => openFacilityRoute(facility)} style={styles.routeButton}>
+                  <Text style={styles.routeButtonText}>Route ↗</Text>
+                </Pressable>
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -381,11 +660,13 @@ export default function App() {
             <Text style={styles.offlineButtonArrow}>↓</Text>
           </Pressable>
           <Text style={styles.offlineStatus}>{offlinePackage ? "Saved · " + new Date(offlinePackage.generated_at).toLocaleString() : "No saved package yet"}</Text>
-          <Text style={styles.offlineWarning}>Offline packs are snapshots. They do not include live maps, weather, traffic or new alerts.</Text>
+          {offlinePackage ? <Text style={styles.offlineStatus}>Nearby facilities saved: {(offlinePackage.nearby_verified_facilities?.length ?? 0) + (offlinePackage.nearby_discovered_facilities?.length ?? 0)} · {offlinePackage.facility_discovery_status ?? "facility discovery not refreshed"}</Text> : null}
+          <Text style={styles.offlineWarning}>Offline mode uses cached emergency facilities and guidance. Full offline map tiles and road-by-road routing are not included yet.</Text>
         </View>
 
         <View style={styles.footer}>
           <Text style={styles.footerStatus}>{status}</Text>
+          {permissionsReady && !backgroundMonitoringReady ? <Text style={styles.offlineWarning}>Background alerts and automatic cache refresh are not active on this device build.</Text> : null}
           <Text style={styles.footerApi}>
             {backendConnection === "connected"
               ? "● Backend reachable" + (backendAiConfigured ? " · Groq key configured" : " · Groq key missing")
@@ -401,12 +682,49 @@ export default function App() {
           <Text style={styles.disclaimer}>ResQLink is a prototype. It does not replace 112, government alerts or professional emergency responders.</Text>
         </View>
       </ScrollView>
+      <Modal visible={weatherVisible} transparent animationType="fade" onRequestClose={() => setWeatherVisible(false)}>
+        <View style={styles.modalShade}>
+          <View style={styles.weatherModal}>
+            <View style={styles.weatherModalHeader}>
+              <View>
+                <Text style={styles.weatherTitle}>Local weather</Text>
+                <Text style={styles.weatherSub}>Supporting information · Open-Meteo</Text>
+              </View>
+              <Pressable onPress={() => setWeatherVisible(false)} style={styles.weatherClose}>
+                <Text style={styles.weatherCloseText}>✕</Text>
+              </Pressable>
+            </View>
+            {weatherBusy ? <ActivityIndicator color="#147A6A" size="large" /> : weatherData?.current ? (
+              <>
+                <Text style={styles.weatherCondition}>{weatherData.current.condition ?? "Current conditions"}</Text>
+                <Text style={styles.weatherTemperature}>{weatherData.current.temperature_c ?? "—"}°C</Text>
+                <View style={styles.weatherMetrics}>
+                  <View style={styles.weatherMetric}><Text style={styles.weatherMetricValue}>{weatherData.current.relative_humidity_pct ?? "—"}%</Text><Text style={styles.weatherMetricLabel}>Humidity</Text></View>
+                  <View style={styles.weatherMetric}><Text style={styles.weatherMetricValue}>{weatherData.current.wind_speed_kmh ?? "—"} km/h</Text><Text style={styles.weatherMetricLabel}>Wind</Text></View>
+                  <View style={styles.weatherMetric}><Text style={styles.weatherMetricValue}>{weatherData.forecast_indicators?.max_precipitation_probability_pct ?? "—"}%</Text><Text style={styles.weatherMetricLabel}>Rain chance</Text></View>
+                </View>
+                <Text style={styles.weatherDisclaimer}>{weatherData.disclaimer ?? "Weather is supporting context, not an official disaster warning."}</Text>
+              </>
+            ) : <Text style={styles.weatherSub}>Weather is unavailable. Check your connection and GPS.</Text>}
+            <Pressable onPress={() => setWeatherVisible(false)} style={styles.weatherDone}><Text style={styles.weatherDoneText}>Close</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F5F7FA" },
+  permissionGate: { flex: 1, justifyContent: "center", alignItems: "center", padding: 28, gap: 16 },
+  permissionTitle: { color: "#173849", fontSize: 24, fontWeight: "900", textAlign: "center" },
+  permissionBody: { color: "#617686", fontSize: 13, lineHeight: 20, textAlign: "center" },
+  permissionMessage: { color: "#9A6720", backgroundColor: "#FFF6E6", borderRadius: 10, padding: 12, fontSize: 11, lineHeight: 17, textAlign: "center" },
+  permissionButton: { backgroundColor: "#147A6A", borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, minWidth: "100%", alignItems: "center" },
+  permissionButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
+  permissionSettings: { padding: 10 },
+  permissionSettingsText: { color: "#14715F", fontSize: 12, fontWeight: "800" },
+  permissionFootnote: { color: "#8A98A6", fontSize: 10, lineHeight: 15, textAlign: "center" },
   container: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 44, gap: 17 },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -414,6 +732,9 @@ const styles = StyleSheet.create({
   logoText: { color: "#FFFFFF", fontWeight: "900", fontSize: 23 },
   brand: { color: "#123344", fontSize: 21, fontWeight: "900", letterSpacing: -0.5 },
   brandSub: { color: "#758494", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginTop: 1 },
+  weatherPill: { backgroundColor: "#EAF4F5", borderWidth: 1, borderColor: "#D5E7E9", borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  weatherPillText: { color: "#1C6870", fontSize: 11, fontWeight: "800" },
+  weatherPillArrow: { color: "#1C6870", fontSize: 15, fontWeight: "900" },
   readyPill: { backgroundColor: "#E7F5EF", borderRadius: 30, paddingHorizontal: 11, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 6 },
   readyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#1C9A65" },
   readyText: { color: "#16734E", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
@@ -483,6 +804,45 @@ const styles = StyleSheet.create({
   stepNumberText: { color: "#14715F", fontSize: 10, fontWeight: "900" },
   instruction: { flex: 1, color: "#435A69", fontSize: 12, lineHeight: 19, paddingTop: 1 },
   safetyNotice: { color: "#986A20", backgroundColor: "#FFF8E8", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
+  mapCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E2E8EE", borderRadius: 15, padding: 12, gap: 9 },
+  map: { width: "100%", height: 230, borderRadius: 11 },
+  mapNote: { color: "#8C734F", fontSize: 9, lineHeight: 14 },
+  chatThread: { backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E2E8EE", padding: 12, gap: 8 },
+  chatBubble: { maxWidth: "92%", padding: 11, borderRadius: 12 },
+  chatUser: { alignSelf: "flex-end", backgroundColor: "#147A6A" },
+  chatAssistant: { alignSelf: "flex-start", backgroundColor: "#EEF3F6" },
+  chatBubbleText: { fontSize: 12, lineHeight: 18 },
+  chatUserText: { color: "#FFFFFF" },
+  chatAssistantText: { color: "#2D4656" },
+  followUp: { color: "#14715F", backgroundColor: "#EAF6F3", padding: 10, borderRadius: 9, fontSize: 11, lineHeight: 16 },
+  facilityCard: { backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E2E8EE", padding: 13, gap: 10 },
+  facilityHint: { color: "#8996A3", fontSize: 10, lineHeight: 15 },
+  facilityRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderColor: "#EDF1F3", paddingTop: 10, gap: 9 },
+  facilityCopy: { flex: 1, gap: 3 },
+  facilityName: { color: "#243E50", fontSize: 12, fontWeight: "900" },
+  facilityMeta: { color: "#758696", fontSize: 10, textTransform: "capitalize" },
+  verifiedText: { color: "#168653", fontSize: 9, fontWeight: "800" },
+  unverifiedText: { color: "#A16B1C", fontSize: 9, fontWeight: "800" },
+  callFacilityButton: { backgroundColor: "#FFF2E8", borderRadius: 9, paddingHorizontal: 11, paddingVertical: 9 },
+  callFacilityText: { color: "#9A5424", fontSize: 10, fontWeight: "900" },
+  routeButton: { backgroundColor: "#EAF4F1", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
+  routeButtonText: { color: "#14715F", fontSize: 10, fontWeight: "900" },
+  modalShade: { flex: 1, backgroundColor: "rgba(10,25,35,0.45)", justifyContent: "center", padding: 22 },
+  weatherModal: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 18, gap: 14 },
+  weatherModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  weatherTitle: { color: "#173849", fontSize: 18, fontWeight: "900" },
+  weatherSub: { color: "#82919E", fontSize: 10, lineHeight: 15 },
+  weatherClose: { width: 32, height: 32, borderRadius: 10, backgroundColor: "#F0F3F5", alignItems: "center", justifyContent: "center" },
+  weatherCloseText: { color: "#536777", fontSize: 16 },
+  weatherCondition: { color: "#556B7B", fontSize: 13, fontWeight: "800", textAlign: "center" },
+  weatherTemperature: { color: "#173849", fontSize: 42, fontWeight: "900", textAlign: "center" },
+  weatherMetrics: { flexDirection: "row", gap: 8, justifyContent: "space-between" },
+  weatherMetric: { flex: 1, backgroundColor: "#F2F6F7", borderRadius: 10, padding: 10, alignItems: "center", gap: 4 },
+  weatherMetricValue: { color: "#1C6870", fontSize: 13, fontWeight: "900" },
+  weatherMetricLabel: { color: "#80909C", fontSize: 9 },
+  weatherDisclaimer: { color: "#8C734F", fontSize: 9, lineHeight: 14 },
+  weatherDone: { backgroundColor: "#147A6A", borderRadius: 10, padding: 12, alignItems: "center" },
+  weatherDoneText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
   offlineCard: { backgroundColor: "#EDF3F7", borderRadius: 15, padding: 14, gap: 10, borderWidth: 1, borderColor: "#DDE6EC" },
   offlineHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   offlineIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: "#DCE9ED", alignItems: "center", justifyContent: "center" },

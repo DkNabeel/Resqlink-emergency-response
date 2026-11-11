@@ -11,7 +11,7 @@ import httpx
 from app.services.geospatial_service import haversine_km
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-CACHE_SECONDS = 900
+CACHE_SECONDS = 600
 _CACHE = {}
 _CACHE_LOCK = asyncio.Lock()
 
@@ -103,7 +103,7 @@ async def discover_facilities(latitude, longitude, radius_km=5):
 
     radius_m = int(radius_km * 1000)
     query = f"""
-[out:json][timeout:18];
+[out:json][timeout:10];
 (
   nwr(around:{radius_m},{latitude},{longitude})["amenity"~"hospital|police|fire_station|shelter"];
   nwr(around:{radius_m},{latitude},{longitude})["emergency"="ambulance_station"];
@@ -118,7 +118,7 @@ out center tags;
             return {**cached["result"], "cache_status": "cached"}
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(22.0, connect=5.0),
+                timeout=httpx.Timeout(12.0, connect=4.0),
                 headers={"User-Agent": "ResQLink-EmergencyResponse/1.0"},
             ) as client:
                 response = await client.post(OVERPASS_URL, data={"data": query})

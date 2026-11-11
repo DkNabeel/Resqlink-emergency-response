@@ -4,7 +4,13 @@ from unittest.mock import patch
 
 import httpx
 
-from app.services.ai_service import AIServiceError, analyze_emergency_with_groq, parse_classification
+from app.services.ai_service import (
+    AIServiceError,
+    analyze_emergency_with_groq,
+    parse_classification,
+    parse_emergency_chat_response,
+    respond_to_emergency_chat,
+)
 
 
 class GroqClassificationTests(unittest.TestCase):
@@ -18,6 +24,56 @@ class GroqClassificationTests(unittest.TestCase):
     def test_unknown_category_is_safely_normalized(self):
         result = parse_classification('{"emergency_type":"made_up","confidence":"high"}')
         self.assertEqual(result["emergency_type"], "unknown")
+
+    def test_parses_dynamic_emergency_chat_reply(self):
+        result = parse_emergency_chat_response(
+            '{"in_scope":true,"emergency_type":"earthquake","urgency":"immediate",'
+            '"reply":"Move away from damaged structures.","follow_up_question":"Are you outside?"}'
+        )
+        self.assertTrue(result["in_scope"])
+        self.assertEqual(result["emergency_type"], "earthquake")
+        self.assertEqual(result["urgency"], "immediate")
+        self.assertIn("damaged structures", result["reply"])
+
+    def test_parses_emergency_only_refusal(self):
+        result = parse_emergency_chat_response(
+            '{"in_scope":false,"emergency_type":"unknown","urgency":"unknown",'
+            '"reply":"ResQLink only handles emergencies.","follow_up_question":""}'
+        )
+        self.assertFalse(result["in_scope"])
+        self.assertIsNone(result["follow_up_question"])
+
+    def test_invalid_dynamic_chat_json_is_rejected(self):
+        with self.assertRaises(AIServiceError):
+            parse_emergency_chat_response("not-json")
+
+    def test_dynamic_groq_chat_sends_emergency_only_prompt_and_history(self):
+        success = httpx.Response(
+            200,
+            json={"choices": [{"message": {"content":
+                '{"in_scope":true,"emergency_type":"fire","urgency":"urgent",'
+                '"reply":"Leave through a safe exit.","follow_up_question":""}'
+            }}]},
+            request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions"),
+        )
+        with patch.dict(os.environ, {
+            "GROQ_API_KEY": "chat-test-key",
+            "GROQ_MODEL": "primary-model",
+            "GROQ_FALLBACK_MODEL": "primary-model",
+        }):
+            with patch("app.services.ai_service.httpx.post", return_value=success) as post:
+                result = respond_to_emergency_chat(
+                    "There is smoke in the kitchen",
+                    "en",
+                    [{"role": "user", "content": "I smell smoke"}],
+                    "fire",
+                    ["Leave through a safe exit."],
+                )
+        self.assertEqual(result["status"], "connected")
+        self.assertTrue(result["in_scope"])
+        payload = post.call_args.kwargs["json"]
+        self.assertIn("emergency-only assistant", payload["messages"][0]["content"])
+        self.assertEqual(payload["messages"][-2]["content"], "I smell smoke")
 
     def test_missing_key_fails_without_network(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": ""}, clear=False):
