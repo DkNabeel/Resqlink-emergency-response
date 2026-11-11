@@ -5,6 +5,36 @@ export type Coordinates = {
   longitude: number;
 };
 
+export type NearbyFacility = {
+  name?: string;
+  facility_type?: string;
+  latitude?: number;
+  longitude?: number;
+  distance_km?: number;
+  address?: string | null;
+  phone?: string | null;
+  source_name?: string | null;
+  source_url?: string | null;
+  verification_status?: "verified" | "unverified" | string;
+  verification_warning?: string;
+};
+
+export type WeatherSnapshot = {
+  current?: {
+    temperature_c?: number | null;
+    apparent_temperature_c?: number | null;
+    relative_humidity_pct?: number | null;
+    wind_speed_kmh?: number | null;
+    condition?: string;
+    time?: string;
+  };
+  forecast_indicators?: {
+    max_precipitation_probability_pct?: number | null;
+  };
+  attribution?: string;
+  disclaimer?: string;
+};
+
 export type OfflinePackage = {
   package_type: string;
   schema_version: number;
@@ -18,7 +48,9 @@ export type OfflinePackage = {
   };
   emergency_contact?: { number?: string; dial_uri?: string; label?: string };
   guidance_catalog?: Record<string, { instructions?: string[]; recommended_facility_types?: string[] }>;
-  nearby_verified_facilities?: unknown[];
+  nearby_verified_facilities?: NearbyFacility[];
+  nearby_discovered_facilities?: NearbyFacility[];
+  facility_discovery_status?: string;
   location_matched_official_alerts?: unknown[];
   unverified_location_alerts?: unknown[];
   offline_capabilities?: Record<string, boolean>;
@@ -27,16 +59,25 @@ export type OfflinePackage = {
 
 export type EmergencyResult = {
   status?: string;
+  in_scope?: boolean;
+  reply?: string;
+  follow_up_question?: string | null;
+  urgency?: string;
   emergency_type?: string;
   guidance?: string[];
   safety_notice?: string;
-  nearby_facilities?: unknown[];
+  nearby_facilities?: NearbyFacility[];
+  nearby_alerts?: unknown[];
+  unverified_alerts?: unknown[];
+  emergency_contact?: { number?: string; dial_uri?: string; label?: string };
   weather_context?: { status?: string; [key: string]: unknown };
   ai_provider?: string;
   ai_status?: string;
   ai_analysis?: {
     status?: string;
     provider?: string;
+    in_scope?: boolean;
+    urgency?: string;
     model?: string;
     short_summary?: string;
     confidence?: string;
@@ -103,6 +144,46 @@ export async function downloadOfflinePackage(
   const etag = response.headers.get("ETag");
   const stored = await saveOfflinePackage(key, etag, payload);
   return { payload, cacheStatus: "live", cached: stored };
+}
+
+export async function sendEmergencyChat(input: {
+  message: string;
+  language: string;
+  conversation_history: { role: "user" | "assistant"; content: string }[];
+  latitude?: number;
+  longitude?: number;
+  radius_km?: number;
+  city?: string;
+  district?: string;
+  state?: string;
+}): Promise<EmergencyResult> {
+  const response = await fetch(requireApiUrl() + "/emergency/chat", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error("Emergency chat failed with HTTP " + response.status + (detail ? ": " + detail.slice(0, 220) : "."));
+  }
+  return (await response.json()) as EmergencyResult;
+}
+
+export async function getNearbyWeather(point: Coordinates): Promise<WeatherSnapshot> {
+  const query = new URLSearchParams({
+    latitude: String(point.latitude),
+    longitude: String(point.longitude),
+    forecast_hours: "6",
+  });
+  const response = await fetch(requireApiUrl() + "/weather/nearby?" + query.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error("Weather request failed with HTTP " + response.status + (detail ? ": " + detail.slice(0, 180) : "."));
+  }
+  return (await response.json()) as WeatherSnapshot;
 }
 
 export type SystemStatus = {
