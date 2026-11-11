@@ -1,92 +1,93 @@
-# ResQLink — Cloudflare demo deployment
+# ResQLink — Cloudflare Free deployment
 
-This branch deploys the existing FastAPI backend inside a Cloudflare Container and exposes it through a Cloudflare Worker. The existing Groq integration, SQLite repositories, API routes, and SACHET background collector remain in the Python app; this deployment does not replace Groq with Gemini.
+This branch runs a **Python Worker with FastAPI** on Cloudflare's Free plan. It keeps the existing multilingual emergency classifier and curated safety guidance, uses **Groq** for optional AI classification, calls Open-Meteo for on-demand weather, and exposes the offline package endpoint used by the Expo app.
 
-## Cloudflare requirements
+No Cloudflare Containers or Workers Paid plan are used. The Cloudflare Worker is stateless in this first demo: server-side SQLite persistence, SACHET background collection, saved location history and verified facility storage are deliberately disabled. The mobile app still caches its downloaded offline package locally in Expo SQLite.
 
-- A Cloudflare account with the **Workers Paid** plan. Cloudflare Containers are not available on the Free plan.
-- Docker Desktop installed and running on the deployment computer.
-- Node.js installed.
-- A Groq API key for AI classification. Without it, the local multilingual classifier still works, but the Groq AI feature is unavailable.
+## Cloudflare Free limits to be aware of
 
-## 1. Get this branch
+- 100,000 Worker requests per day.
+- 10 ms CPU time per HTTP request (network waiting time does not count).
+- D1 is available on Free (not configured in this first demo branch).
+- Do not treat this student prototype as a real emergency dispatch service.
 
-From a terminal:
+Official limits: https://developers.cloudflare.com/workers/platform/limits/
+
+## 1. Requirements
+
+- Node.js
+- `uv` (Python package/project manager)
+- A Cloudflare account (Free plan is enough)
+- A Groq API key (optional but required for Groq AI classification)
+
+Install uv on Windows (one option):
 
 ```powershell
-git clone https://github.com/DkNabeel/Resqlink-emergency-response.git
-cd Resqlink-emergency-response
-git switch cloudflare-demo
+winget install --id=astral-sh.uv -e
 ```
 
-If you already cloned the repository:
+## 2. Get the Cloudflare branch
+
+From PowerShell:
 
 ```powershell
 git fetch origin
 git switch cloudflare-demo
 ```
 
-## 2. Install and connect Wrangler
+## 3. Install the Python Worker tooling
 
-Make sure Docker Desktop is running, then from the repository root:
-
-```powershell
-npm install
-npx wrangler login
-```
-
-Complete the browser login using the Cloudflare account that has the Workers Paid plan enabled.
-
-## 3. Add secrets
-
-Add the Groq key. Wrangler will prompt you to paste it:
+Run from the repository root:
 
 ```powershell
-npx wrangler secret put GROQ_API_KEY
+uv sync
 ```
 
-Optional secrets:
+## 4. Add the Groq key
 
 ```powershell
-npx wrangler secret put OPENROUTESERVICE_API_KEY
-npx wrangler secret put FACILITY_ADMIN_TOKEN
+uv run pywrangler secret put GROQ_API_KEY
 ```
 
-Only add the optional keys when those features are needed. Never put secrets in the mobile app or commit them to GitHub.
+Paste the Groq key when prompted. It is stored as a Cloudflare Worker secret; do not put it in the mobile app or commit it.
 
-## 4. Deploy
+If you do not add a key, local multilingual keyword detection still works, but Groq AI will show as not configured.
 
-From the repository root, with Docker Desktop still running:
+## 5. Test locally first
 
 ```powershell
-npx wrangler deploy
+uv run pywrangler dev
 ```
 
-Wrangler builds the Docker image, uploads it to Cloudflare, and deploys the Worker. The first container deployment can take several minutes while Cloudflare provisions the service.
+Open the local URL printed by Wrangler (normally http://localhost:8787):
 
-Wrangler prints the public URL. It will look like:
+- `/health`
+- `/system/status`
+- `/docs`
 
-`https://resqlink-cloudflare-demo.<your-workers-subdomain>.workers.dev`
+The local worker uses Cloudflare's local runtime simulator. Confirm that `/health` returns status `ok` and that `/system/status` reports AI provider `Groq`.
 
-## 5. Test the API before opening the mobile app
+## 6. Deploy to Cloudflare Free
 
-Open these URLs in a browser, replacing the example host with the URL printed by Wrangler:
+Stop the local dev process and run:
 
-- `https://YOUR-WORKER.workers.dev/health`
-- `https://YOUR-WORKER.workers.dev/system/status`
-- `https://YOUR-WORKER.workers.dev/docs`
+```powershell
+uv run pywrangler deploy
+```
 
-The health endpoint should return JSON with an `ok` status. In `/system/status`, confirm the AI provider is Groq and that the API is connected.
+Accept the prompt to create/enable the free `workers.dev` subdomain if asked. Wrangler prints the public Worker URL, for example:
 
-## 6. Connect Expo Go to the Cloudflare API
+`https://resqlink-emergency-api.<your-subdomain>.workers.dev`
 
-In the `mobile` folder, create a local file named `.env` (do not commit it) and put the public Worker URL in it:
+## 7. Connect Expo Go to the deployed API
+
+Create `mobile/.env` (copy `mobile/.env.example`) and set the exact URL Wrangler printed:
 
 ```env
-EXPO_PUBLIC_API_BASE_URL=https://YOUR-WORKER.workers.dev
+EXPO_PUBLIC_API_BASE_URL=https://resqlink-emergency-api.<your-subdomain>.workers.dev
 ```
 
-Then run:
+Then:
 
 ```powershell
 cd mobile
@@ -94,12 +95,27 @@ npm install
 npx expo start --tunnel
 ```
 
-Scan the QR code in Expo Go. The tunnel is only for loading the development app onto the phone; all backend API calls go to the public Cloudflare URL.
+Scan the QR code using Expo Go. The Expo tunnel only loads the development app onto the phone; API calls go directly to the public Cloudflare URL.
 
-After changing `.env`, restart Expo so it reloads the public URL.
+Restart Expo after changing `.env`.
 
-## Demo limitations
+## What works in this free demo
 
-This branch is intended for a college demonstration and end-to-end testing, not production emergency use. The existing SQLite file is included in the container image so the backend can start without a database migration. Changes written to the container's local SQLite file can be lost if Cloudflare replaces the container instance. The alert collector starts with the FastAPI app and refreshes while the container is running; it is not a guaranteed always-on alert service. The container is configured to stop after 30 minutes without requests and starts again on the next request.
+- FastAPI routes running on Cloudflare Python Workers.
+- Groq classification when `GROQ_API_KEY` is configured.
+- Multilingual English/Hindi/Kannada rule-based fallback.
+- Curated emergency instructions and India emergency number 112.
+- On-demand Open-Meteo weather when the emergency request includes GPS and `include_weather=true`.
+- Download and local SQLite caching of offline safety guides in Expo Go.
+- Unverified OpenStreetMap nearby-facility discovery endpoint.
 
-Do not rely on this student prototype for real emergency dispatch or life-safety decisions. Call India's emergency number 112 when needed.
+## Not enabled in this first free demo
+
+- Persistent server-side SQLite data, saved user locations or verified facilities.
+- SACHET alert ingestion, storage or background refresh.
+- Offline map tiles and push notifications.
+- Live traffic conditions (the current road route provider is an ETA from road-network data, not live traffic).
+
+The server returns explicit empty alert/facility storage fields rather than pretending they are populated. The phone's saved offline package remains available offline, but contains only the curated guidance and 112 in this build.
+
+This is a student prototype for presentation and testing only. Never rely on it as an emergency dispatch service; call 112 and follow official authorities.
