@@ -23,7 +23,7 @@ python -m uvicorn app.main:app --reload
 
 API documentation: http://127.0.0.1:8000/docs
 
-## Free cloud deployment (Render)
+## Cloudflare demo deployment (current)\n\nFollow [CLOUDFLARE_DEPLOY.md](CLOUDFLARE_DEPLOY.md) to deploy the existing Groq + FastAPI backend through Cloudflare Containers. This requires a Workers Paid plan and Docker Desktop.\n\n## Legacy cloud deployment (Render)
 
 The repository includes a `render.yaml` Blueprint for deploying the existing FastAPI backend as a free Render web service.
 
@@ -166,4 +166,4 @@ GET /facilities/discover?latitude=12.97&longitude=77.59&radius_km=5 queries the 
 
 ## Mobile application
 
-See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. Set EXPO_PUBLIC_API_BASE_URL to the backend's laptop LAN address; the phone and laptop must be on the same Wi-Fi for local development. The client does not include offline map tiles or push notification delivery.
+See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. For the Cloudflare demo, set EXPO_PUBLIC_API_BASE_URL to the public workers.dev URL printed after deployment. Expo Go can load the app over its tunnel while API requests go to Cloudflare. The client does not include offline map tiles or push notification delivery.
