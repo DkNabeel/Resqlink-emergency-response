@@ -1056,10 +1056,19 @@ async def discover_nearby_facilities(
     combined = []
     seen = set()
     for facility in verified_facilities + discovery.get("items", []):
+        try:
+            facility_latitude = float(facility["latitude"])
+            facility_longitude = float(facility["longitude"])
+        except (KeyError, TypeError, ValueError):
+            logger.warning(
+                "Skipping facility discovery record without valid coordinates: %s",
+                facility.get("name", "unnamed"),
+            )
+            continue
         key = (
             str(facility.get("name") or "").strip().casefold(),
-            round(float(facility["latitude"]), 5),
-            round(float(facility["longitude"]), 5),
+            round(facility_latitude, 5),
+            round(facility_longitude, 5),
         )
         if key in seen:
             continue
