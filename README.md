@@ -2,7 +2,7 @@
 
 ResQLink is a mobile emergency-response project. This repository currently contains the FastAPI backend, SQLite persistence, multilingual rule-based emergency intent handling, NDMA SACHET alert ingestion, geospatial matching, facility management and an on-demand weather forecast adapter.
 
-**Implementation honesty:** The current emergency intent module is deterministic keyword-based NLP, not Gemini. The native mobile application, device-side GPS permissions, on-device offline maps/cache, traffic provider and push notifications are not implemented in this backend snapshot.
+**Implementation:** The emergency endpoint uses optional Gemini intent classification when configured, with deterministic multilingual keyword detection as a fallback. Safety instructions remain curated local guidance. The native mobile application, device-side GPS permissions, on-device offline maps/cache, traffic provider and push notifications are not implemented in this backend snapshot.
 
 ## Backend setup
 
@@ -60,7 +60,7 @@ POST /emergency:
 
 When both coordinates are supplied, the endpoint also requests a short Open-Meteo weather forecast by default. Set "include_weather": false to skip this provider call, or set "weather_forecast_hours" from 1 to 24. If the weather provider fails, the emergency analysis still returns and weather_context is marked unavailable.
 
-Supported response languages: en, hi, kn. The caller explicitly selects the response language. The local rule-based detector currently recognizes fire, flood, earthquake, cyclone, landslide, tsunami, lightning, gas leak, medical emergency, road accident and violence keywords. Multiple detected types are returned; guidance and suggested facility types are combined for all detected hazards, with one primary category selected by a fixed priority order. This is a demo fallback, not a trained classifier or medical triage system. Weather fetching from `/emergency` is opt-in (`include_weather=true`) so the basic emergency response does not wait on an external weather provider.
+Supported response languages: en, hi, kn. The endpoint uses the standard Gemini generate_content API when GEMINI_API_KEY is configured. Requests have a bounded timeout and fall back to local detection on API/model/quota failure. Gemini classifies the report but does not generate safety instructions. Set use_gemini=false per request to skip it. Default models: gemini-3.8-flash and gemini-3.5-flash-lite as fallback. The caller explicitly selects the response language. The local rule-based detector currently recognizes fire, flood, earthquake, cyclone, landslide, tsunami, lightning, gas leak, medical emergency, road accident and violence keywords. Multiple detected types are returned; guidance and suggested facility types are combined for all detected hazards, with one primary category selected by a fixed priority order. This is a demo fallback, not a trained classifier or medical triage system. Weather fetching from `/emergency` is opt-in (`include_weather=true`) so the basic emergency response does not wait on an external weather provider.
 
 The emergency response includes India's unified ERSS number 112. The Ministry of Home Affairs describes 112 as the nationwide single emergency number for police, fire, health and other emergencies: https://www.mha.gov.in/emergency-response-support-system-erss
 
@@ -125,7 +125,7 @@ The test suite includes parser/geospatial tests, multilingual emergency tests, w
 
 See .env.example. Important settings:
 
-- GEMINI_API_KEY and GEMINI_MODEL (Gemini is not yet integrated into POST /emergency)
+- GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_ENABLED and GEMINI_REQUEST_TIMEOUT_SECONDS
 - SACHET_FEED_URL, SACHET_SYNC_ENABLED, SACHET_REFRESH_SECONDS
 - IP_GEOLOCATION_ENABLED and IP_GEOLOCATION_URL_TEMPLATE
 - FACILITY_ADMIN_TOKEN (protects facility verification endpoint)

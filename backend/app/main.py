@@ -39,6 +39,7 @@ from app.services.emergency_service import (
     build_emergency_response,
 )
 from app.services.geospatial_service import haversine_km, match_alert_location
+from app.services.gemini_service import GeminiServiceError, analyze_emergency_with_gemini
 from app.services.location_service import estimate_location_from_ip
 from app.services.sachet_service import DEFAULT_SACHET_FEED, sync_sachet_feed
 from app.services.weather_service import WeatherServiceError, get_weather_snapshot
@@ -99,6 +100,7 @@ app = FastAPI(
 
 class EmergencyRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+    use_gemini: bool = True
     language: Literal["en", "hi", "kn"] = "en"
 
     @field_validator("message")
@@ -222,9 +224,12 @@ def system_status():
                 "api_key_required": False,
             },
             "gemini": {
+                "enabled": os.getenv("GEMINI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"},
                 "api_key_configured": bool(os.getenv("GEMINI_API_KEY")),
-                "endpoint_connected": False,
-                "note": "Gemini is not currently used by POST /emergency.",
+                "primary_model": os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
+                "fallback_model": os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite"),
+                "integration": "generate_content",
+                "note": "Optional Gemini classification; local curated safety guidance remains the fallback.",
             },
         },
         "mobile": {
@@ -246,6 +251,53 @@ async def receive_emergency(request: EmergencyRequest):
         )
 
     result = build_emergency_response(request.message.strip(), request.language)
+    gemini_analysis = {"status": "disabled"}
+    gemini_enabled = os.getenv("GEMINI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+    if request.use_gemini and gemini_enabled:
+        if os.getenv("GEMINI_API_KEY", "").strip():
+            timeout_seconds = max(3, min(18, int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "12"))))
+            try:
+                gemini_analysis = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        analyze_emergency_with_gemini,
+                        request.message.strip(),
+                        request.language,
+                        result.get("emergency_type", "unknown"),
+                    ),
+                    timeout=timeout_seconds,
+                )
+                ai_type = gemini_analysis.get("emergency_type", "unknown")
+                # Local matches remain primary. Gemini may fill an unknown
+                # local result, but the returned instructions stay curated.
+                if result.get("emergency_type") == "unknown" and ai_type != "unknown":
+                    result["emergency_type"] = ai_type
+                    result["all_detected_types"] = [ai_type]
+                    result["matched_keywords"] = []
+                    result["confidence_label"] = "gemini_classification"
+                    result["method"] = "gemini_classification_with_curated_guidance"
+                    result["urgency"] = "urgent"
+                    result["guidance"] = GUIDANCE[request.language][ai_type]
+                    result["guidance_by_emergency_type"] = {ai_type: GUIDANCE[request.language][ai_type]}
+                    result["recommended_facility_types"] = FACILITY_SUGGESTIONS[ai_type]
+            except asyncio.TimeoutError:
+                gemini_analysis = {
+                    "status": "timeout",
+                    "message": "Gemini exceeded the response time limit; local emergency analysis was used.",
+                }
+            except GeminiServiceError as exc:
+                logger.warning("Gemini classification unavailable: %s", exc)
+                gemini_analysis = {"status": "unavailable", "message": str(exc)[:280]}
+            except Exception as exc:
+                logger.exception("Unexpected Gemini classification failure")
+                gemini_analysis = {"status": "error", "message": f"Unexpected Gemini error: {type(exc).__name__}"}
+        else:
+            gemini_analysis = {
+                "status": "not_configured",
+                "message": "Set GEMINI_API_KEY in backend/.env to enable Gemini.",
+            }
+    elif not gemini_enabled:
+        gemini_analysis = {"status": "disabled_by_server"}
     nearby_facilities = []
     nearby_alerts = []
     unverified_alerts = []
@@ -314,8 +366,13 @@ async def receive_emergency(request: EmergencyRequest):
         "status": "processed",
         "message": request.message.strip(),
         **result,
-        "analysis_engine": "local_multilingual_nlp_fallback",
-        "gemini_status": "not_connected",
+        "analysis_engine": (
+            "gemini_classification_with_curated_guidance"
+            if gemini_analysis.get("status") == "connected"
+            else "local_multilingual_nlp_fallback"
+        ),
+        "gemini_status": gemini_analysis.get("status", "unknown"),
+        "gemini_analysis": gemini_analysis,
         "location_used": (
             {"latitude": request.latitude, "longitude": request.longitude, "radius_km": request.radius_km}
             if has_latitude else None

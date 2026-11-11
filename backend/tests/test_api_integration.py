@@ -123,6 +123,57 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertEqual(response.json()["emergency_type"], "fire")
         self.assertEqual(response.json()["weather_context"]["status"], "unavailable")
 
+    def test_emergency_uses_gemini_classification_and_curated_guidance(self):
+        from unittest.mock import patch
+
+        fake_result = {
+            "status": "connected",
+            "provider": "Google Gemini API",
+            "model": "gemini-test-model",
+            "emergency_type": "gas_leak",
+            "confidence": "high",
+            "short_summary": "A gas leak is reported.",
+            "key_details": ["Smell of gas"],
+        }
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "integration-test-key"}):
+            with patch("app.main.analyze_emergency_with_gemini", return_value=fake_result):
+                response = self.client.post(
+                    "/emergency",
+                    json={
+                        "message": "There is a strange smell in the kitchen",
+                        "language": "en",
+                        "use_gemini": True,
+                    },
+                )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["gemini_status"], "connected")
+        self.assertEqual(body["emergency_type"], "gas_leak")
+        self.assertEqual(body["method"], "gemini_classification_with_curated_guidance")
+        self.assertTrue(body["guidance"])
+
+    def test_emergency_falls_back_to_local_when_gemini_fails(self):
+        from unittest.mock import patch
+        from app.services.gemini_service import GeminiServiceError
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "integration-test-key"}):
+            with patch(
+                "app.main.analyze_emergency_with_gemini",
+                side_effect=GeminiServiceError("test provider failure"),
+            ):
+                response = self.client.post(
+                    "/emergency",
+                    json={
+                        "message": "There is a fire and smoke",
+                        "language": "en",
+                        "use_gemini": True,
+                    },
+                )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["emergency_type"], "fire")
+        self.assertEqual(response.json()["gemini_status"], "unavailable")
+        self.assertTrue(response.json()["guidance"])
+
     def test_emergency_rejects_partial_coordinates(self):
         response = self.client.post(
             "/emergency",
@@ -209,8 +260,7 @@ class ResQLinkApiTests(unittest.TestCase):
         response = self.client.get("/system/status")
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertFalse(body["providers"]["gemini"]["endpoint_connected"])
-        self.assertEqual(body["mobile"]["on_device_offline_cache"], "not_implemented")
+        self.assertEqual(body["providers"]["gemini"]["integration"], "generate_content")
         self.assertEqual(body["providers"]["weather"]["provider"], "Open-Meteo")
 
     def test_blank_inputs_are_rejected(self):

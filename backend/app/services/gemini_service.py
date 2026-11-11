@@ -1,132 +1,134 @@
-"""Gemini API helper used by the ResQLink backend."""
-
+"""Short-timeout Gemini intent classification for ResQLink."""
+import json
 import os
-import time
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+ALLOWED_TYPES = {
+    "fire", "flood", "earthquake", "cyclone", "landslide", "tsunami",
+    "lightning", "gas_leak", "medical", "road_accident", "violence", "unknown",
+}
 
 
-# Load the backend/.env file without printing or exposing its contents.
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
-load_dotenv(ENV_PATH)
+class GeminiServiceError(RuntimeError):
+    """Gemini unavailable or returned an invalid classification."""
 
 
-def _format_api_error(error) -> str | None:
-    """Format a Gemini ErrorEvent without exposing credentials."""
-    if error is None:
-        return None
+def parse_classification(text):
+    if not isinstance(text, str) or not text.strip():
+        raise GeminiServiceError("Gemini returned an empty response.")
+    cleaned = text.strip()
+    cleaned = re.sub(r"^\s*\x60\x60\x60(?:json)?\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\s*\x60\x60\x60\s*$", "", cleaned)
+    try:
+        payload = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start < 0 or end <= start:
+            raise GeminiServiceError("Gemini did not return valid JSON.")
+        try:
+            payload = json.loads(cleaned[start:end + 1])
+        except json.JSONDecodeError as exc:
+            raise GeminiServiceError("Gemini did not return valid JSON.") from exc
 
-    if isinstance(error, dict):
-        code = error.get("code")
-        message = error.get("message")
-    else:
-        code = getattr(error, "code", None)
-        message = getattr(error, "message", None)
+    if not isinstance(payload, dict):
+        raise GeminiServiceError("Gemini response must be a JSON object.")
+    emergency_type = str(payload.get("emergency_type", "unknown")).strip().lower()
+    if emergency_type not in ALLOWED_TYPES:
+        emergency_type = "unknown"
+    confidence = str(payload.get("confidence", "low")).strip().lower()
+    if confidence not in {"high", "medium", "low"}:
+        confidence = "low"
+    details = payload.get("key_details", [])
+    if not isinstance(details, list):
+        details = []
+    return {
+        "emergency_type": emergency_type,
+        "confidence": confidence,
+        "short_summary": str(payload.get("short_summary", "")).strip()[:240],
+        "key_details": [str(x).strip()[:100] for x in details[:5] if str(x).strip()],
+    }
 
-    if code or message:
-        return f"{code or 'API error'}: {message or 'No message returned.'}"
 
-    return str(error)
+def _prompt(message, language, local_type):
+    return (
+        "Classify this emergency report for ResQLink in India. Return JSON only with "
+        "emergency_type, confidence, short_summary, and key_details. "
+        f"emergency_type must be one of {sorted(ALLOWED_TYPES)}. "
+        "confidence must be high, medium, or low. summary max 240 characters; "
+        "key_details is up to five short factual items. "
+        "Do not write safety instructions, medical diagnoses, reassurance, or safe-location claims. "
+        "Do not invent places, people, injuries, causes, or coordinates. "
+        f"Requested response language: {language}. "
+        f"Local keyword detector hint: {local_type}. "
+        "If vague, choose unknown with low confidence.\nUser report:\n"
+        + message.strip()
+    )
 
 
-def generate_reply(message: str) -> str:
-    """Send a text prompt to Gemini and wait for its background interaction."""
+def analyze_emergency_with_gemini(message, language="en", local_type="unknown"):
+    """Use generateContent once; fallback model only when the primary is unavailable."""
     if not isinstance(message, str) or not message.strip():
         raise ValueError("message must be a non-empty string.")
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    model = os.getenv("GEMINI_MODEL")
-
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
-        raise ValueError("GEMINI_API_KEY is missing from backend/.env.")
-    if not model:
-        raise ValueError("GEMINI_MODEL is missing from backend/.env.")
+        raise GeminiServiceError("GEMINI_API_KEY is not configured.")
 
-    print(f"Preparing Gemini client. Model: {model}", flush=True)
-
-    with genai.Client(
+    primary = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+    fallback = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite").strip()
+    timeout_ms = max(3000, min(15000, int(os.getenv("GEMINI_HTTP_TIMEOUT_MS", "9000"))))
+    models = list(dict.fromkeys(model for model in (primary, fallback) if model))
+    client = genai.Client(
         api_key=api_key,
-        http_options={
-            "timeout": 30000,
-            "retry_options": {"attempts": 0},
-        },
-    ) as client:
-        print("Submitting background request to Gemini...", flush=True)
-
-        interaction = client.interactions.create(
-            model=model,
-            input=message.strip(),
-            background=True,
-        )
-
-        interaction_id = interaction.id
-        print(
-            f"Gemini accepted the request. Interaction ID: {interaction_id}",
-            flush=True,
-        )
-
-        deadline = time.monotonic() + 120
-
-        while True:
-            interaction = client.interactions.get(id=interaction_id)
-            status = str(interaction.status).lower().split(".")[-1]
-
-            if status == "completed":
-                break
-
-            if status in {"failed", "cancelled", "canceled", "incomplete", "budget_exceeded"}:
-                details = _format_api_error(getattr(interaction, "error", None))
-
-                # Background polling can expose only the terminal status.
-                # The streaming endpoint delivers structured ErrorEvents.
-                if status == "failed" and not details:
-                    print("Retrieving Gemini's detailed error event...", flush=True)
-                    try:
-                        for event in client.interactions.get(
-                            id=interaction_id,
-                            stream=True,
-                        ):
-                            if getattr(event, "event_type", None) == "error":
-                                details = _format_api_error(
-                                    getattr(event, "error", None)
-                                )
-                                if details:
-                                    break
-                    except Exception as stream_error:
-                        details = (
-                            "Could not retrieve the error event: "
-                            f"{type(stream_error).__name__}: {stream_error}"
-                        )
-
-                if not details:
-                    details = "Gemini returned a terminal status without error details."
-
-                raise RuntimeError(
-                    f"Gemini interaction {status}. "
-                    f"Interaction ID: {interaction_id}. Details: {details}"
+        http_options={"timeout": timeout_ms, "retry_options": {"attempts": 0}},
+    )
+    failures = []
+    try:
+        for index, model in enumerate(models):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=_prompt(message, language, local_type),
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.1,
+                        max_output_tokens=300,
+                    ),
                 )
+                parsed = parse_classification(getattr(response, "text", None))
+                return {
+                    "status": "connected",
+                    "provider": "Google Gemini API",
+                    "model": model,
+                    **parsed,
+                }
+            except GeminiServiceError:
+                raise
+            except Exception as exc:
+                failures.append(f"{model}: {type(exc).__name__}")
+                detail = str(exc).lower()
+                model_missing = "404" in detail or "not found" in detail or "unknown model" in detail
+                if not (model_missing and index + 1 < len(models)):
+                    break
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
 
-            if time.monotonic() >= deadline:
-                raise TimeoutError(
-                    "Gemini is still processing after 120 seconds. "
-                    f"Interaction ID: {interaction_id}"
-                )
-
-            print(f"Gemini status: {status}. Checking again in 2 seconds...", flush=True)
-            time.sleep(2)
-
-    reply = interaction.output_text
-    if not reply:
-        raise RuntimeError(
-            f"Gemini interaction completed without text. Interaction ID: {interaction_id}"
-        )
-
-    print("Gemini response received.", flush=True)
-    return reply.strip()
+    raise GeminiServiceError(
+        "Gemini generation failed (" + "; ".join(failures) + "). "
+        "Check AI Studio key access, model availability, quota and network."
+    )
 
 
-if __name__ == "__main__":
-    reply = generate_reply("Reply with exactly: Gemini connected.")
-    print(reply)
+def generate_reply(message):
+    """Backward-compatible helper for the older one-line test script."""
+    result = analyze_emergency_with_gemini(message)
+    return result.get("short_summary") or result["emergency_type"]
