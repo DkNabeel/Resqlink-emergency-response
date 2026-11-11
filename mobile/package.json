@@ -22,5 +22,8 @@
   "devDependencies": {
     "@types/react": "~19.3.0",
     "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "@babel/traverse": "7.29.13"
   }
 }
