@@ -14,6 +14,8 @@ import {
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import * as Location from "expo-location";
+import "./src/background";
+import { startBackgroundMonitoring, setBackgroundLanguage } from "./src/background";
 import {
   getOfflineGuidance,
   getSystemStatus,
@@ -117,7 +119,18 @@ export default function App() {
   }
 
   useEffect(() => {
+    setBackgroundLanguage(language).catch(() => {});
+  }, [language]);
+
+  useEffect(() => {
     let active = true;
+    startBackgroundMonitoring()
+      .then((result) => {
+        if (active) setStatus(result.message);
+      })
+      .catch(() => {
+        if (active) setStatus("Background monitoring could not be enabled. Foreground emergency assistance remains available.");
+      });
     getLatestOfflinePackage()
       .then((cached) => {
         if (active && cached) setOfflinePackage(cached.payload);
