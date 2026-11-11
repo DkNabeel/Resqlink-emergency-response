@@ -612,7 +612,7 @@ export default function App() {
               </View>
             ))}
             <Text style={styles.safetyNotice}>{result.safety_notice ?? "Follow official emergency responder instructions."}</Text>
-            {result.nearby_alerts && result.nearby_alerts.length > 0 ? <Text style={styles.sourceText}>Confirmed location-matched government alerts: {result.nearby_alerts.length}</Text> : null}
+            {result.nearby_alerts && result.nearby_alerts.length > 0 ? <Text style={styles.sourceText}>Location-matched government alerts (check match precision): {result.nearby_alerts.length}</Text> : null}
             {result.unverified_alerts && result.unverified_alerts.length > 0 ? <Text style={styles.diagnosticWarning}>{result.unverified_alerts.length} government alert(s) could not be confirmed for your exact location. Review their official source before acting.</Text> : null}
             {result.weather_context && typeof result.weather_context === "object" ? <Text style={styles.sourceText}>Weather context: {String((result.weather_context as { status?: string }).status ?? "available")}</Text> : null}
           </View>
