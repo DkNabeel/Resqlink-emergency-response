@@ -515,6 +515,38 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertFalse(package["offline_capabilities"]["map_tiles_included"])
         self.assertFalse(package["offline_capabilities"]["live_alert_updates"])
 
+    def test_offline_package_includes_unverified_nearby_discovery_candidates(self):
+        candidate = {
+            "name": "Community Mapped Fire Station",
+            "facility_type": "fire_station",
+            "latitude": 12.9717,
+            "longitude": 77.5947,
+            "distance_km": 0.02,
+            "verification_status": "unverified",
+            "source_name": "OpenStreetMap contributors",
+        }
+        with patch(
+            "app.main.discover_facilities",
+            new=AsyncMock(return_value={"items": [candidate], "cache_status": "live"}),
+        ):
+            response = self.client.get(
+                "/offline/package",
+                params={
+                    "latitude": 12.9716,
+                    "longitude": 77.5946,
+                    "language": "en",
+                    "radius_km": 2,
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        package = response.json()
+        self.assertEqual(len(package["nearby_discovered_facilities"]), 1)
+        self.assertEqual(
+            package["nearby_discovered_facilities"][0]["verification_status"],
+            "unverified",
+        )
+        self.assertTrue(package["offline_capabilities"]["unverified_osm_facility_candidates"])
+
     def test_offline_package_supports_etag_and_only_changes_when_payload_changes(self):
         params = {
             "latitude": 12.9716,
