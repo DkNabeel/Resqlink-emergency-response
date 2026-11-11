@@ -166,6 +166,7 @@ export default function App() {
   } | null>(null);
   const [facilityLookupStatus, setFacilityLookupStatus] = useState<FacilityLookupStatus>("idle");
   const [facilityLookupError, setFacilityLookupError] = useState("");
+  const [facilityLookupInfo, setFacilityLookupInfo] = useState("");
   const [routeEstimate, setRouteEstimate] = useState<RouteSummary | null>(null);
   const [routeEstimateError, setRouteEstimateError] = useState("");
   const [routeBusyFacility, setRouteBusyFacility] = useState<string | null>(null);
@@ -203,6 +204,15 @@ export default function App() {
       const items = Array.isArray(found.items) ? found.items : [];
       setNearbyFacilities(items);
       setFacilityLookupStatus(items.length > 0 ? "available" : "empty");
+      const rawCount = typeof found.raw_element_count === "number" ? found.raw_element_count : null;
+      const verifiedCount = found.verified_project_count ?? items.filter((item) => item.verification_status === "verified").length;
+      const osmCount = found.osm_candidate_count ?? items.filter((item) => item.verification_status !== "verified").length;
+      setFacilityLookupInfo(
+        `Received ${items.length} facilities · ${verifiedCount} verified project records · ${osmCount} OpenStreetMap candidates`
+        + (rawCount !== null ? ` · ${rawCount} raw map objects` : "")
+        + (found.osm_status === "unavailable" ? " · OpenStreetMap temporarily unavailable" : "")
+        + (found.provider_endpoint ? ` · ${found.provider_endpoint.replace(/^https?:\\/\\//, "")}` : ""),
+      );
       const saved = await cacheNearbyFacilities(items, point, radiusKm).catch(() => null);
       const savedMatchesArea = Boolean(
         saved
@@ -239,6 +249,7 @@ export default function App() {
       if (requestSequence !== facilityRequestSequence.current) return;
       const detail = error instanceof Error ? error.message : "Nearby facility lookup failed.";
       setFacilityLookupError(detail);
+      setFacilityLookupInfo("Facility API request failed before any facilities could be loaded.");
       setFacilityLookupStatus("error");
       setStatus("Nearby facility search is temporarily unavailable");
     }
@@ -961,6 +972,7 @@ export default function App() {
                 <Text style={styles.facilityMeta}>Finding nearby hospitals, shelters, fire and police services...</Text>
               </View>
             ) : null}
+            {facilityLookupInfo ? <Text style={styles.facilityMeta}>{facilityLookupInfo}</Text> : null}
             {facilityLookupStatus === "error" ? (
               <Text style={styles.diagnosticWarning}>
                 Live facility search failed: {facilityLookupError}
@@ -968,7 +980,11 @@ export default function App() {
               </Text>
             ) : null}
             {facilityLookupStatus === "empty" && facilities.length === 0 ? (
-              <Text style={styles.facilityHint}>No mapped public-service or community facilities were returned within {facilityRadiusKm} km. This does not mean no services exist nearby; use 112 for urgent help.</Text>
+              <Text style={styles.facilityHint}>
+                The map search returned no usable facility records within {facilityRadiusKm} km.
+                {facilityLookupInfo ? " " + facilityLookupInfo + "." : ""}
+                This does not mean no services exist nearby; use 112 for urgent help.
+              </Text>
             ) : null}
             {facilities.length > 0 && visibleFacilities.length === 0 ? (
               <Text style={styles.facilityHint}>No saved candidates match this category. Choose All or another category to see nearby places.</Text>
@@ -1031,8 +1047,8 @@ export default function App() {
               </View>
             ) : null}
             {routeEstimateError ? <Text style={styles.diagnosticWarning}>{routeEstimateError}</Text> : null}
-            <Pressable onPress={() => refreshNearbyFacilities(coordinates)} style={styles.recheckButton}>
-              <Text style={styles.recheckText}>Refresh nearby facilities</Text>
+            <Pressable onPress={() => refreshNearbyFacilities(coordinates, facilityRadiusKm)} style={styles.recheckButton}>
+              <Text style={styles.recheckText}>Search this area again</Text>
             </Pressable>
           </View>
         ) : null}
