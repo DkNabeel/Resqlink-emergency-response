@@ -24,6 +24,7 @@ import {
   getNearbyWeather,
   getNearbyFacilities,
   cacheNearbyFacilities,
+  getCachedNearbyFacilities,
   getDrivingRoute,
   downloadOfflinePackage,
   type EmergencyResult,
@@ -121,6 +122,8 @@ export default function App() {
   const [weatherBusy, setWeatherBusy] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherSnapshot | null>(null);
   const [nearbyFacilities, setNearbyFacilities] = useState<NearbyFacility[]>([]);
+  const [cachedNearbyFacilities, setCachedNearbyFacilities] = useState<NearbyFacility[]>([]);
+  const [cachedNearbyFacilitiesAt, setCachedNearbyFacilitiesAt] = useState<string | null>(null);
   const [facilityLookupStatus, setFacilityLookupStatus] = useState<FacilityLookupStatus>("idle");
   const [facilityLookupError, setFacilityLookupError] = useState("");
   const [routeEstimate, setRouteEstimate] = useState<RouteSummary | null>(null);
@@ -137,18 +140,26 @@ export default function App() {
     setFacilityLookupStatus("loading");
     setFacilityLookupError("");
     try {
-      const found = await getNearbyFacilities(point, 10);
+      const found = await getNearbyFacilities(point, 20);
       if (requestSequence !== facilityRequestSequence.current) return;
       const items = Array.isArray(found.items) ? found.items : [];
       setNearbyFacilities(items);
       setFacilityLookupStatus(items.length > 0 ? "available" : "empty");
-      await cacheNearbyFacilities(items).catch(() => {});
-      setOfflinePackage((current) => current
-        ? { ...current, nearby_discovered_facilities: items, facility_discovery_status: "available" }
-        : current);
+      const saved = await cacheNearbyFacilities(items, point, 20).catch(() => null);
+      if (saved && saved.items.length > 0) {
+        setCachedNearbyFacilities(saved.items);
+        setCachedNearbyFacilitiesAt(saved.storedAt);
+      }
+      if (items.length > 0) {
+        setOfflinePackage((current) => current
+          ? { ...current, nearby_discovered_facilities: items, facility_discovery_status: "available" }
+          : current);
+      }
       setStatus(items.length > 0
         ? `Found ${items.length} nearby facility candidate(s)`
-        : "No mapped emergency facilities returned within 10 km");
+        : saved?.items.length
+          ? "No new live results · showing previously saved nearby facilities"
+          : "No mapped public-service or community facilities returned within 20 km");
     } catch (error) {
       if (requestSequence !== facilityRequestSequence.current) return;
       const detail = error instanceof Error ? error.message : "Nearby facility lookup failed.";
@@ -223,6 +234,14 @@ export default function App() {
     getLatestOfflinePackage()
       .then((cached) => {
         if (active && cached) setOfflinePackage(cached.payload);
+      })
+      .catch(() => {});
+    getCachedNearbyFacilities()
+      .then((cached) => {
+        if (active && cached) {
+          setCachedNearbyFacilities(cached.items);
+          setCachedNearbyFacilitiesAt(cached.storedAt);
+        }
       })
       .catch(() => {});
     getSystemStatus()
@@ -484,10 +503,10 @@ export default function App() {
     ...(offlinePackage?.nearby_discovered_facilities ?? []),
   ];
   const facilities: NearbyFacility[] =
-    facilityLookupStatus === "available" || facilityLookupStatus === "empty"
+    nearbyFacilities.length > 0
       ? nearbyFacilities
-      : nearbyFacilities.length > 0
-        ? nearbyFacilities
+      : cachedNearbyFacilities.length > 0
+        ? cachedNearbyFacilities
         : (result?.nearby_facilities?.length ? result.nearby_facilities : packageFacilities);
 
   if (!permissionsReady) {
@@ -705,7 +724,7 @@ export default function App() {
         {coordinates ? (
           <View style={styles.facilityCard}>
             <Text style={styles.sectionTitle}>Nearby emergency facilities</Text>
-            <Text style={styles.facilityHint}>Searching a 10 km radius. Community-mapped candidates remain unverified.</Text>
+            <Text style={styles.facilityHint}>Searching a 20 km radius for hospitals, clinics, pharmacies, police, fire stations, ambulance services, shelters and colleges. Map candidates remain unverified.</Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
                 <ActivityIndicator color="#147A6A" />
@@ -719,7 +738,14 @@ export default function App() {
               </Text>
             ) : null}
             {facilityLookupStatus === "empty" && facilities.length === 0 ? (
-              <Text style={styles.facilityHint}>No mapped emergency facilities were returned within 10 km. This does not mean no services exist nearby; use 112 for urgent help.</Text>
+              <Text style={styles.facilityHint}>No mapped public-service or community facilities were returned within 20 km. This does not mean no services exist nearby; use 112 for urgent help.</Text>
+            ) : null}
+            {nearbyFacilities.length === 0 && cachedNearbyFacilities.length > 0 ? (
+              <Text style={styles.facilityHint}>
+                Showing {cachedNearbyFacilities.length} previously saved nearby candidates
+                {cachedNearbyFacilitiesAt ? " · saved " + new Date(cachedNearbyFacilitiesAt).toLocaleString() : ""}.
+                These are cached map records and may have changed.
+              </Text>
             ) : null}
             {facilityLookupStatus === "idle" && facilities.length === 0 ? (
               <Text style={styles.facilityHint}>Nearby facility lookup will start when GPS is ready.</Text>
@@ -780,7 +806,12 @@ export default function App() {
             <Text style={styles.offlineButtonArrow}>↓</Text>
           </Pressable>
           <Text style={styles.offlineStatus}>{offlinePackage ? "Saved · " + new Date(offlinePackage.generated_at).toLocaleString() : "No saved package yet"}</Text>
-          {offlinePackage ? <Text style={styles.offlineStatus}>Nearby facilities saved: {(offlinePackage.nearby_verified_facilities?.length ?? 0) + (offlinePackage.nearby_discovered_facilities?.length ?? 0)} · {offlinePackage.facility_discovery_status ?? "facility discovery not refreshed"}</Text> : null}
+          <Text style={styles.offlineStatus}>
+            Nearby facilities saved: {Math.max(
+              cachedNearbyFacilities.length,
+              (offlinePackage?.nearby_verified_facilities?.length ?? 0) + (offlinePackage?.nearby_discovered_facilities?.length ?? 0)
+            )} · separate on-device facility cache
+          </Text>
           <Text style={styles.offlineWarning}>Offline mode uses cached emergency facilities and guidance. Full offline map tiles and road-by-road routing are not included yet.</Text>
         </View>
 

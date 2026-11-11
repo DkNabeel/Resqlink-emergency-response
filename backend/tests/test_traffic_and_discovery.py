@@ -72,9 +72,30 @@ class FacilityDiscoveryTests(unittest.TestCase):
         self.assertEqual(result[0]["verification_status"], "unverified")
         self.assertIn("distance_km", result[0])
 
+    def test_college_school_clinic_pharmacy_and_community_centres_are_included(self):
+        result = normalize_overpass_elements([
+            {"type": "node", "id": 10, "lat": 12.9, "lon": 77.5, "tags": {"amenity": "college"}},
+            {"type": "node", "id": 11, "lat": 12.901, "lon": 77.501, "tags": {"building": "school"}},
+            {"type": "node", "id": 12, "lat": 12.902, "lon": 77.502, "tags": {"healthcare": "clinic"}},
+            {"type": "node", "id": 13, "lat": 12.903, "lon": 77.503, "tags": {"amenity": "pharmacy"}},
+            {"type": "node", "id": 14, "lat": 12.904, "lon": 77.504, "tags": {"amenity": "community_centre"}},
+            {"type": "node", "id": 15, "lat": 12.905, "lon": 77.505, "tags": {"amenity": "police"}},
+            {"type": "node", "id": 16, "lat": 12.906, "lon": 77.506, "tags": {"amenity": "fire_station"}},
+        ], 12.9, 77.5, 5)
+        by_id = {item["osm_id"]: item["facility_type"] for item in result}
+        self.assertEqual(by_id, {
+            10: "education",
+            11: "education",
+            12: "clinic",
+            13: "pharmacy",
+            14: "community_center",
+            15: "police",
+            16: "fire_station",
+        })
+
     def test_unclassified_or_out_of_radius_places_are_excluded(self):
         result = normalize_overpass_elements([
-            {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5, "tags": {"amenity": "school"}},
+            {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5, "tags": {"amenity": "restaurant"}},
             {"type": "node", "id": 2, "lat": 13.9, "lon": 77.5, "tags": {"name": "Far Hospital", "amenity": "hospital"}},
         ], 12.9, 77.5, 2)
         self.assertEqual(result, [])
@@ -116,6 +137,48 @@ class FacilityDiscoveryTests(unittest.TestCase):
             len(normalize_overpass_elements([place, place], 12.9, 77.5, 5)),
             1,
         )
+
+    def test_fails_over_when_first_overpass_instance_returns_empty_snapshot(self):
+        import asyncio
+        from unittest.mock import patch
+        from app.services import facility_discovery_service as service
+
+        class FakeResponse:
+            def __init__(self, elements):
+                self.elements = elements
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"elements": self.elements}
+
+        class FakeClient:
+            def __init__(self):
+                self.urls = []
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                return None
+            async def post(self, url, data, timeout=None):
+                self.urls.append(url)
+                if len(self.urls) == 1:
+                    return FakeResponse([])
+                return FakeResponse([{
+                    "type": "node", "id": 99, "lat": 12.9, "lon": 77.5,
+                    "tags": {"amenity": "hospital", "name": "Fallback Hospital"},
+                }])
+
+        fake = FakeClient()
+        service.clear_discovery_cache()
+        try:
+            with patch("app.services.facility_discovery_service.httpx.AsyncClient", return_value=fake):
+                result = asyncio.run(service.discover_facilities(12.9, 77.5, 5))
+        finally:
+            service.clear_discovery_cache()
+
+        self.assertEqual(fake.urls, list(service.OVERPASS_URLS[:2]))
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["name"], "Fallback Hospital")
+        self.assertEqual(result["provider_endpoint"], service.OVERPASS_URLS[1])
 
     def test_fails_over_to_another_overpass_instance_after_http_502(self):
         import asyncio
@@ -162,10 +225,11 @@ class FacilityDiscoveryTests(unittest.TestCase):
         finally:
             service.clear_discovery_cache()
 
-        self.assertEqual(fake.urls, list(service.OVERPASS_URLS[:2]))
+        self.assertEqual(fake.urls, list(service.OVERPASS_URLS))
         self.assertEqual(fake.timeouts[0].read, 35.0)
-        self.assertEqual(fake.timeouts[1].read, 12.0)
+        self.assertTrue(all(item.read == 12.0 for item in fake.timeouts[1:]))
         self.assertEqual(result["items"], [])
+        self.assertEqual(result["raw_element_count"], 0)
         self.assertEqual(result["cache_status"], "live")
 
 
