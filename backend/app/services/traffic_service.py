@@ -86,6 +86,7 @@ async def get_traffic_route(origin_latitude, origin_longitude, destination_latit
         }}},
         "travelMode": "DRIVE",
         "routingPreference": "TRAFFIC_AWARE",
+        "departureTime": "now",
         "computeAlternativeRoutes": False,
         "languageCode": "en-IN",
         "units": "METRIC",
