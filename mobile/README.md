@@ -1,6 +1,6 @@
 # ResQLink Mobile (Expo React Native)
 
-This is the first Android/iOS client foundation. It includes:
+This is the Android/iOS client foundation. It includes:
 - Foreground GPS permission and current location retrieval.
 - Emergency submission to the FastAPI backend.
 - English, Hindi and Kannada selection.
@@ -12,34 +12,39 @@ This is the first Android/iOS client foundation. It includes:
 
 - Node.js 22.13 or newer for Expo SDK 58.
 - Android phone with Expo Go compatible with SDK 58, or an Android development build.
-- Laptop and phone on the same Wi-Fi for a local backend connection.
 
-## Configure the backend address
+## Connect to the Cloudflare backend
 
-Copy .env.example to .env and set EXPO_PUBLIC_API_BASE_URL to your laptop's LAN IPv4 address. Do not use 127.0.0.1 from the phone; that points to the phone itself.
+1. Deploy the backend by following [CLOUDFLARE_DEPLOY.md](../CLOUDFLARE_DEPLOY.md).
+2. Copy the public `workers.dev` URL printed by Wrangler.
+3. Create `.env` in this `mobile` folder (copy `.env.example`) and set:
 
-Example (replace the address with the laptop's actual IPv4):
+```env
+EXPO_PUBLIC_API_BASE_URL=https://YOUR-WORKER.workers.dev
+```
 
-EXPO_PUBLIC_API_BASE_URL=http://192.168.1.20:8000
+Do not add a trailing slash. Do not put Groq or other backend secrets in this file.
 
-Start FastAPI so other devices on the LAN can reach it:
+## Run the app in Expo Go
 
-~~~powershell
-cd D:\PROJECTS\Resqlink-emergency-response\backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-~~~
+From this `mobile` folder:
 
-Allow TCP port 8000 through Windows Defender Firewall on the private network if prompted. Do not expose the development server to public networks.
-
-## Install and run
-
-~~~powershell
-cd D:\PROJECTS\Resqlink-emergency-response\mobile
+```powershell
 npm install
-npx expo start
-~~~
+npx expo start --tunnel
+```
 
-Scan the QR code with the compatible Expo Go app or run an Android emulator. If installed SDK package versions differ, use npx expo install --fix to align Expo dependencies.
+Scan the QR code using Expo Go. The Expo tunnel lets the phone load the development app; the app's API requests go directly to the public Cloudflare backend. Restart Expo after editing `.env` so the new URL is bundled into the app.
+
+## Local backend development (optional)
+
+For local development only, set `EXPO_PUBLIC_API_BASE_URL` to your laptop's LAN IPv4 address, for example `http://192.168.1.20:8000`. The phone and laptop must be on the same Wi-Fi. Do not use `127.0.0.1` on the phone.
+
+Start FastAPI from the `backend` folder:
+
+```powershell
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
 
 ## Offline limits
 
