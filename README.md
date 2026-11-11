@@ -23,7 +23,11 @@ python -m uvicorn app.main:app --reload
 
 API documentation: http://127.0.0.1:8000/docs
 
-## Cloudflare demo deployment (current)\n\nFollow [CLOUDFLARE_DEPLOY.md](CLOUDFLARE_DEPLOY.md) to deploy the existing Groq + FastAPI backend through Cloudflare Containers. This requires a Workers Paid plan and Docker Desktop.\n\n## Legacy cloud deployment (Render)
+## Cloudflare demo deployment (current)
+
+Follow [CLOUDFLARE_DEPLOY.md](CLOUDFLARE_DEPLOY.md) to deploy the existing Groq + FastAPI backend through Cloudflare Containers. This requires a Workers Paid plan and Docker Desktop.
+
+## Legacy cloud deployment (Render)
 
 The repository includes a `render.yaml` Blueprint for deploying the existing FastAPI backend as a free Render web service.
 
