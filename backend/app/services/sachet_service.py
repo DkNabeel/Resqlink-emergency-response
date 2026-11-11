@@ -278,11 +278,28 @@ def parse_polygon_document(xml_content):
     return unique
 
 
+def _recent_forbidden_cache(cached, retry_after_seconds=21600):
+    """Avoid repeatedly calling an endpoint that has recently returned HTTP 403."""
+    if not cached or cached.get("last_http_status") != 403:
+        return False
+    try:
+        fetched = datetime.fromisoformat(cached["fetched_at"].replace("Z", "+00:00"))
+        if fetched.tzinfo is None:
+            fetched = fetched.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - fetched).total_seconds()
+        return 0 <= age < retry_after_seconds
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 async def _get_cached_document(client, url):
     if not _valid_sachet_url(url):
         raise ValueError("Only HTTPS documents hosted on sachet.ndma.gov.in are allowed.")
 
     cached = get_document_cache(url)
+    if _recent_forbidden_cache(cached):
+        return None, "forbidden_cached"
+
     headers = {
         "Accept": "application/xml, text/xml, application/rss+xml;q=0.9, */*;q=0.1",
         "User-Agent": "ResQLink-Student-Project/1.0",
@@ -300,6 +317,19 @@ async def _get_cached_document(client, url):
             "Accept": headers["Accept"],
             "User-Agent": headers["User-Agent"],
         })
+
+    if response.status_code == 403:
+        # Remember the block for six hours so the 5-minute collector does not
+        # repeatedly hit an endpoint the source currently refuses to serve.
+        save_document_cache(
+            url,
+            "",
+            etag=response.headers.get("ETag"),
+            last_modified=response.headers.get("Last-Modified"),
+            http_status=403,
+        )
+        return None, "forbidden"
+
     response.raise_for_status()
     content = response.text
     save_document_cache(
@@ -320,6 +350,8 @@ async def _enrich_one_alert(client, alert, semaphore):
     async with semaphore:
         try:
             cap_xml, _ = await _get_cached_document(client, detail_url)
+            if not cap_xml:
+                return alert, False, False
             enriched = parse_cap_document(cap_xml, alert)
         except Exception as exc:
             alert["enrichment_error"] = f"{type(exc).__name__}: {exc}"[:300]
@@ -329,11 +361,17 @@ async def _enrich_one_alert(client, alert, semaphore):
         polygon_added = False
         if polygon_url:
             try:
-                polygon_xml, _ = await _get_cached_document(client, polygon_url)
-                polygons = parse_polygon_document(polygon_xml)
-                if polygons:
-                    enriched["polygons"] = polygons
-                    polygon_added = True
+                polygon_xml, polygon_state = await _get_cached_document(client, polygon_url)
+                if polygon_xml:
+                    polygons = parse_polygon_document(polygon_xml)
+                    if polygons:
+                        enriched["polygons"] = polygons
+                        polygon_added = True
+                elif polygon_state in {"forbidden", "forbidden_cached"}:
+                    enriched.setdefault("parameters", []).append({
+                        "name": "Polygon fetch status",
+                        "value": "HTTP 403 Forbidden; retained CAP district/locality details",
+                    })
             except Exception as exc:
                 # Keep CAP metadata and district geocodes even if polygon retrieval fails.
                 enriched["polygon_fetch_error"] = f"{type(exc).__name__}: {exc}"[:300]

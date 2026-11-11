@@ -96,6 +96,25 @@ class GeospatialTests(unittest.TestCase):
         result = match_alert_location(alert, 12.0, 77.0)
         self.assertIsNone(result["matched"])
 
+    def test_bilingual_cap_headline_can_match_named_district(self):
+        alert = {
+            "languages": {
+                "en-IN": {
+                    "headline": "Rain likely in Kolkata and South 24 Parganas",
+                    "areas": [{"area_description": "West Bengal"}],
+                },
+                "BN": {"headline": "বাংলা সতর্কতা", "areas": []},
+            }
+        }
+        result = match_alert_location(
+            alert, 22.5, 88.3, district="South 24 Parganas"
+        )
+        self.assertTrue(result["matched"])
+        self.assertEqual(result["method"], "cap_locality_text")
+        self.assertEqual(
+            result["precision"], "district_or_locality_text_not_polygon"
+        )
+
 
 class SachetParserTests(unittest.TestCase):
     def test_parse_rss_cap_item(self):

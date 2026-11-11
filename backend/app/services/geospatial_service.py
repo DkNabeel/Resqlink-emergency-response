@@ -97,18 +97,37 @@ def match_alert_location(alert, latitude, longitude, city=None, district=None, s
             ),
         }
 
-    area_text = " ".join(
-        str(value or "")
-        for value in (
-            alert.get("area_description"),
-            alert.get("description"),
-            alert.get("title"),
-        )
-    )
+    text_parts = [
+        alert.get("area_description"),
+        alert.get("description"),
+        alert.get("title"),
+    ]
+    # CAP messages can contain multiple <info> blocks, one per language.
+    # Search all translations so a district named in the English headline
+    # remains discoverable even when another language is the first CAP block.
+    languages = alert.get("languages") or {}
+    for language_info in languages.values():
+        if not isinstance(language_info, dict):
+            continue
+        text_parts.extend((
+            language_info.get("headline"),
+            language_info.get("description"),
+            language_info.get("instruction"),
+        ))
+        for area_info in language_info.get("areas", []):
+            if isinstance(area_info, dict):
+                text_parts.append(area_info.get("area_description"))
 
-    for name, method in ((city, "city_text"), (district, "district_text")):
+    area_text = " ".join(str(value or "") for value in text_parts)
+
+    for name in (city, district):
         if _contains_location_name(area_text, name):
-            return {"matched": True, "method": method, "distance_km": None}
+            return {
+                "matched": True,
+                "method": "cap_locality_text",
+                "distance_km": None,
+                "precision": "district_or_locality_text_not_polygon",
+            }
 
     if state and _contains_location_name(area_text, state):
         return {"matched": None, "method": "state_only_unconfirmed", "distance_km": None}
