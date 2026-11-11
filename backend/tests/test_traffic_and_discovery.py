@@ -72,12 +72,42 @@ class FacilityDiscoveryTests(unittest.TestCase):
         self.assertEqual(result[0]["verification_status"], "unverified")
         self.assertIn("distance_km", result[0])
 
-    def test_unnamed_or_out_of_radius_places_are_excluded(self):
+    def test_unclassified_or_out_of_radius_places_are_excluded(self):
         result = normalize_overpass_elements([
-            {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5, "tags": {"amenity": "hospital"}},
+            {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5, "tags": {"amenity": "school"}},
             {"type": "node", "id": 2, "lat": 13.9, "lon": 77.5, "tags": {"name": "Far Hospital", "amenity": "hospital"}},
         ], 12.9, 77.5, 2)
         self.assertEqual(result, [])
+
+    def test_keeps_unnamed_facilities_with_address_or_osm_id(self):
+        result = normalize_overpass_elements([
+            {
+                "type": "way", "id": 246514894,
+                "center": {"lat": 12.765146, "lon": 75.207966},
+                "tags": {
+                    "amenity": "hospital",
+                    "addr:district": "Dakshina Kannada",
+                    "addr:full": "A.P.M.C. Road, Puttur",
+                },
+            },
+            {
+                "type": "node", "id": 69387696, "lat": 12.75854, "lon": 75.196183,
+                "tags": {"amenity": "hospital"},
+            },
+            {
+                "type": "node", "id": 42, "lat": 12.76, "lon": 75.20,
+                "tags": {"amenity": "shelter"},
+            },
+        ], 12.795665856, 75.209681191, 10)
+
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[0]["name"], "Hospital near A.P.M.C. Road, Puttur")
+        self.assertEqual(result[0]["osm_name"], None)
+        self.assertFalse(result[0]["has_map_name"])
+        self.assertEqual(result[0]["osm_id"], 246514894)
+        self.assertEqual(result[0]["verification_status"], "unverified")
+        self.assertIn("OSM node/69387696", result[1]["name"])
+        self.assertTrue(result[2]["name"].startswith("Unnamed Shelter"))
 
     def test_deduplicates_same_place(self):
         place = {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5,
