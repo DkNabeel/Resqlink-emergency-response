@@ -40,6 +40,11 @@ export type DrivingRouteEstimate = {
   live_traffic_available: boolean;
   note: string;
   checked_at?: string;
+  route_geometry?: {
+    type?: string;
+    coordinates?: [number, number][];
+  } | null;
+  encoded_polyline?: string | null;
 };
 
 export type WeatherSnapshot = {
