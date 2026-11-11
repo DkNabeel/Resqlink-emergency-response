@@ -48,7 +48,10 @@ def normalize_overpass_elements(elements, origin_latitude, origin_longitude, rad
         tags = element.get("tags") or {}
         name = str(tags.get("name") or tags.get("name:en") or "").strip()
         facility_type = _facility_type(tags)
-        if not name or not facility_type:
+        # Many valid OSM hospitals and shelters are mapped without a name tag.
+        # Keep them when their facility type and coordinates are usable; attach
+        # a clearly inferred label instead of silently dropping the map feature.
+        if not facility_type:
             continue
 
         latitude, longitude = element.get("lat"), element.get("lon")
@@ -65,19 +68,42 @@ def normalize_overpass_elements(elements, origin_latitude, origin_longitude, rad
         distance = haversine_km(origin_latitude, origin_longitude, latitude, longitude)
         if distance > radius_km:
             continue
-        identity = (facility_type, name.casefold(), round(latitude, 4), round(longitude, 4))
+        source_type, source_id = element.get("type"), element.get("id")
+        address = str(tags.get("addr:full") or "").strip() or None
+        if not address:
+            address_parts = (
+                tags.get("addr:housenumber"), tags.get("addr:street"),
+                tags.get("addr:suburb"), tags.get("addr:city"),
+                tags.get("addr:district"), tags.get("addr:state"),
+            )
+            address = ", ".join(str(part) for part in address_parts if part) or None
+
+        facility_label = facility_type.replace("_", " ").title()
+        if name:
+            display_name = name
+        elif address:
+            display_name = f"{facility_label} near {address}"
+        elif source_type and source_id is not None:
+            display_name = f"Unnamed {facility_label} (OSM {source_type}/{source_id})"
+        else:
+            display_name = f"Unnamed {facility_label} at {latitude:.5f}, {longitude:.5f}"
+
+        if name:
+            identity = (facility_type, name.casefold(), round(latitude, 4), round(longitude, 4))
+        elif source_type and source_id is not None:
+            identity = ("osm", source_type, str(source_id))
+        else:
+            identity = (facility_type, display_name.casefold(), round(latitude, 4), round(longitude, 4))
         if identity in seen:
             continue
         seen.add(identity)
 
-        address_parts = (
-            tags.get("addr:housenumber"), tags.get("addr:street"),
-            tags.get("addr:suburb"), tags.get("addr:city"),
-        )
-        address = ", ".join(str(part) for part in address_parts if part) or None
-        source_type, source_id = element.get("type"), element.get("id")
         result.append({
-            "name": name,
+            "name": display_name,
+            "osm_name": name or None,
+            "has_map_name": bool(name),
+            "osm_element_type": source_type,
+            "osm_id": source_id,
             "facility_type": facility_type,
             "latitude": latitude,
             "longitude": longitude,
