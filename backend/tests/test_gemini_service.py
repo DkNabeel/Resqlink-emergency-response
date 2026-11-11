@@ -34,7 +34,7 @@ class GeminiClassificationTests(unittest.TestCase):
         )
         client = MagicMock()
         client.models.generate_content.side_effect = [
-            RuntimeError("504 DEADLINE_EXCEEDED"),
+            RuntimeError("504 Gateway Timeout: Deadline expired before operation could complete."),
             response,
         ]
         with patch.dict(os.environ, {
