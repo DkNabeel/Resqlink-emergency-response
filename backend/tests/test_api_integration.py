@@ -263,7 +263,8 @@ class ResQLinkApiTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["providers"]["gemini"]["integration"], "generate_content")
         self.assertEqual(body["providers"]["weather"]["provider"], "Open-Meteo")
-        self.assertEqual(body["providers"]["traffic"]["provider"], "Google Maps Routes API")
+        self.assertEqual(body["providers"]["traffic"]["provider"], "OpenRouteService (HeiGIT)")
+        self.assertFalse(body["providers"]["traffic"]["live_traffic_available"])
         self.assertTrue(body["providers"]["facility_discovery"]["results_are_unverified"])
 
     def test_blank_inputs_are_rejected(self):
@@ -545,12 +546,12 @@ class ResQLinkApiTests(unittest.TestCase):
         from unittest.mock import AsyncMock, patch
 
         fake_result = {
-            "provider": "Google Maps Routes API",
-            "traffic_aware_eta_seconds": 600,
-            "traffic_aware_eta_minutes": 10,
+            "provider": "OpenRouteService (HeiGIT)",
+            "estimated_travel_time_seconds": 600,
+            "estimated_travel_time_minutes": 10,
             "distance_meters": 5000,
             "distance_km": 5,
-            "routing_preference": "TRAFFIC_AWARE",
+            "live_traffic_available": False,
         }
         with patch("app.main.get_traffic_route", AsyncMock(return_value=fake_result)):
             response = self.client.post(
@@ -563,7 +564,8 @@ class ResQLinkApiTests(unittest.TestCase):
                 },
             )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["traffic_aware_eta_minutes"], 10)
+        self.assertEqual(response.json()["estimated_travel_time_minutes"], 10)
+        self.assertFalse(response.json()["live_traffic_available"])
 
     def test_traffic_route_missing_key_returns_service_unavailable(self):
         from unittest.mock import AsyncMock, patch
