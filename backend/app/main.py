@@ -39,7 +39,7 @@ from app.services.emergency_service import (
     build_emergency_response,
 )
 from app.services.geospatial_service import haversine_km, match_alert_location
-from app.services.gemini_service import GeminiServiceError, analyze_emergency_with_gemini
+from app.services.ai_service import AIServiceError, analyze_emergency_with_groq
 from app.services.traffic_service import TrafficNotConfigured, TrafficServiceError, get_traffic_route
 from app.services.facility_discovery_service import discover_facilities
 from app.services.location_service import estimate_location_from_ip
@@ -102,7 +102,8 @@ app = FastAPI(
 
 class EmergencyRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
-    use_gemini: bool = True
+    use_gemini: bool = True  # Deprecated alias retained for older mobile clients.
+    use_ai: Optional[bool] = None
     language: Literal["en", "hi", "kn"] = "en"
 
     @field_validator("message")
@@ -243,13 +244,15 @@ def system_status():
                 "api_key_required": False,
                 "results_are_unverified": True,
             },
-            "gemini": {
-                "enabled": os.getenv("GEMINI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"},
-                "api_key_configured": bool(os.getenv("GEMINI_API_KEY")),
-                "primary_model": os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
-                "fallback_model": os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite"),
-                "integration": "generate_content",
-                "note": "Optional Gemini classification; local curated safety guidance remains the fallback.",
+            "ai": {
+                "provider": "Groq",
+                "enabled": os.getenv("AI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"},
+                "api_key_configured": bool(os.getenv("GROQ_API_KEY")),
+                "primary_model": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
+                "fallback_model": os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b"),
+                "integration": "chat_completions_json_mode",
+                "billing_mode": "free_tier_rate_limited",
+                "note": "Optional Groq classification; local NLP and curated emergency guidance remain available if AI is unavailable.",
             },
         },
         "mobile": {
@@ -276,54 +279,55 @@ async def receive_emergency(request: EmergencyRequest):
         )
 
     result = build_emergency_response(request.message.strip(), request.language)
-    gemini_analysis = {"status": "disabled"}
-    gemini_enabled = os.getenv("GEMINI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    ai_analysis = {"status": "disabled"}
+    ai_enabled = os.getenv("AI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    ai_requested = request.use_gemini if request.use_ai is None else request.use_ai
 
-    if request.use_gemini and gemini_enabled:
-        if os.getenv("GEMINI_API_KEY", "").strip():
-            # Allow up to two provider attempts, each with the minimum 10s HTTP deadline.
-            timeout_seconds = max(22, min(30, int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "22"))))
+    if ai_requested and ai_enabled:
+        if os.getenv("GROQ_API_KEY", "").strip():
+            # Two bounded provider attempts (primary + fallback) fit inside this limit.
+            timeout_seconds = max(20, min(32, int(os.getenv("AI_TOTAL_TIMEOUT_SECONDS", "30"))))
             try:
-                gemini_analysis = await asyncio.wait_for(
+                ai_analysis = await asyncio.wait_for(
                     asyncio.to_thread(
-                        analyze_emergency_with_gemini,
+                        analyze_emergency_with_groq,
                         request.message.strip(),
                         request.language,
                         result.get("emergency_type", "unknown"),
                     ),
                     timeout=timeout_seconds,
                 )
-                ai_type = gemini_analysis.get("emergency_type", "unknown")
-                # Local matches remain primary. Gemini may fill an unknown
-                # local result, but the returned instructions stay curated.
+                ai_type = ai_analysis.get("emergency_type", "unknown")
+                # Local keyword matches remain primary. Groq may fill unknown
+                # classifications, while safety instructions remain curated.
                 if result.get("emergency_type") == "unknown" and ai_type != "unknown":
                     result["emergency_type"] = ai_type
                     result["all_detected_types"] = [ai_type]
                     result["matched_keywords"] = []
-                    result["confidence_label"] = "gemini_classification"
-                    result["method"] = "gemini_classification_with_curated_guidance"
+                    result["confidence_label"] = "ai_classification"
+                    result["method"] = "groq_classification_with_curated_guidance"
                     result["urgency"] = "urgent"
                     result["guidance"] = GUIDANCE[request.language][ai_type]
                     result["guidance_by_emergency_type"] = {ai_type: GUIDANCE[request.language][ai_type]}
                     result["recommended_facility_types"] = FACILITY_SUGGESTIONS[ai_type]
             except asyncio.TimeoutError:
-                gemini_analysis = {
+                ai_analysis = {
                     "status": "timeout",
-                    "message": "Gemini exceeded the response time limit; local emergency analysis was used.",
+                    "message": "Groq exceeded the response time limit; local emergency analysis was used.",
                 }
-            except GeminiServiceError as exc:
-                logger.warning("Gemini classification unavailable: %s", exc)
-                gemini_analysis = {"status": "unavailable", "message": str(exc)[:280]}
+            except AIServiceError as exc:
+                logger.warning("Groq classification unavailable: %s", exc)
+                ai_analysis = {"status": "unavailable", "message": str(exc)[:280]}
             except Exception as exc:
-                logger.exception("Unexpected Gemini classification failure")
-                gemini_analysis = {"status": "error", "message": f"Unexpected Gemini error: {type(exc).__name__}"}
+                logger.exception("Unexpected Groq classification failure")
+                ai_analysis = {"status": "error", "message": f"Unexpected AI error: {type(exc).__name__}"}
         else:
-            gemini_analysis = {
+            ai_analysis = {
                 "status": "not_configured",
-                "message": "Set GEMINI_API_KEY in backend/.env to enable Gemini.",
+                "message": "Set GROQ_API_KEY in backend/.env to enable Groq AI classification.",
             }
-    elif not gemini_enabled:
-        gemini_analysis = {"status": "disabled_by_server"}
+    elif not ai_enabled:
+        ai_analysis = {"status": "disabled_by_server"}
     nearby_facilities = []
     nearby_alerts = []
     unverified_alerts = []
@@ -393,12 +397,16 @@ async def receive_emergency(request: EmergencyRequest):
         "message": request.message.strip(),
         **result,
         "analysis_engine": (
-            "gemini_classification_with_curated_guidance"
-            if gemini_analysis.get("status") == "connected"
+            "groq_classification_with_curated_guidance"
+            if ai_analysis.get("status") == "connected"
             else "local_multilingual_nlp_fallback"
         ),
-        "gemini_status": gemini_analysis.get("status", "unknown"),
-        "gemini_analysis": gemini_analysis,
+        "ai_provider": "Groq",
+        "ai_status": ai_analysis.get("status", "unknown"),
+        "ai_analysis": ai_analysis,
+        # Backward-compatible response aliases for older app builds.
+        "gemini_status": ai_analysis.get("status", "unknown"),
+        "gemini_analysis": ai_analysis,
         "location_used": (
             {"latitude": request.latitude, "longitude": request.longitude, "radius_km": request.radius_km}
             if has_latitude else None
