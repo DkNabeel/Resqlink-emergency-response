@@ -115,6 +115,14 @@ export type SystemStatus = {
       primary_model?: string;
       fallback_model?: string;
     };
+    routing?: {
+      provider?: string;
+      enabled?: boolean;
+      api_key_configured?: boolean;
+      endpoint?: string;
+      travel_mode?: string;
+      live_traffic_available?: boolean;
+    };
   };
 };
 
@@ -153,6 +161,45 @@ export async function sendEmergency(input: {
     );
   }
   return (await response.json()) as EmergencyResult;
+}
+
+
+export type TrafficRouteInput = {
+  origin_latitude: number;
+  origin_longitude: number;
+  destination_latitude: number;
+  destination_longitude: number;
+};
+
+export type TrafficRouteResult = {
+  provider: string;
+  travel_mode: string;
+  live_traffic_available: boolean;
+  estimated_travel_time_seconds: number;
+  estimated_travel_time_minutes: number;
+  distance_meters: number;
+  distance_km: number;
+  encoded_polyline?: string | null;
+  route_geometry?: unknown;
+  checked_at?: string;
+  note?: string;
+};
+
+export async function getTrafficRoute(input: TrafficRouteInput): Promise<TrafficRouteResult> {
+  const response = await fetch(requireApiUrl() + "/routes/traffic", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      "Route API request failed with HTTP " +
+        response.status +
+        (detail ? ": " + detail.slice(0, 220) : "."),
+    );
+  }
+  return (await response.json()) as TrafficRouteResult;
 }
 
 const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
