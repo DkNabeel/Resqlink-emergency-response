@@ -32,7 +32,8 @@ From PowerShell:
 
 ```powershell
 git fetch origin
-git switch cloudflare-demo
+git switch main
+git pull origin main
 ```
 
 ## 3. Install the Python Worker tooling
@@ -75,18 +76,19 @@ Run this in the same terminal session before `uv run pywrangler dev`. It reads y
 **API configuration already present in `backend/.env.example`:**
 
 - **Groq:** `GROQ_API_KEY` — used by the current Cloudflare Worker for AI emergency-report classification.
-- **OpenRouteService by HeiGIT:** `OPENROUTESERVICE_API_KEY` — already used by the original backend for road-based routes, distance and estimated journey time. The route endpoint still needs to be migrated to the Cloudflare Worker before the deployed Worker can use it.
+- **OpenRouteService by HeiGIT:** `OPENROUTESERVICE_API_KEY` — now used by the Cloudflare Worker at `POST /routes/traffic` for driving routes, road distance and estimated journey time. Live traffic is not included.
 - **Open-Meteo:** no API key required.
 - **OpenStreetMap Overpass:** no API key required.
 - **NDMA SACHET:** no API key; its background ingestion remains disabled in this stateless demo.
 
-For production, Cloudflare stores secrets separately from local files. Once ready to deploy, add the Groq key with:
+For production, Cloudflare stores secrets separately from local files. Before deployment, add both API keys as encrypted Worker secrets:
 
 ```powershell
 uv run pywrangler secret put GROQ_API_KEY
+uv run pywrangler secret put OPENROUTESERVICE_API_KEY
 ```
 
-Add `OPENROUTESERVICE_API_KEY` as a Cloudflare secret after the route endpoint is migrated into the Worker. Never commit or expose `backend/.env`.
+Paste each value when prompted. Never commit or expose `backend/.env`.
 
 ## 5. Test locally first
 
