@@ -17,6 +17,9 @@ export type NearbyFacility = {
   source_url?: string | null;
   verification_status?: "verified" | "unverified" | string;
   verification_warning?: string;
+  has_map_name?: boolean;
+  osm_name?: string | null;
+  osm_id?: number | string | null;
 };
 
 export type DrivingRouteEstimate = {
@@ -319,7 +322,7 @@ const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
     tsunami: ["After a strong or long coastal earthquake, move immediately to high ground or inland.", "Do not wait to watch the sea or approach the shore.", "Remain in the safe area until authorities issue an all-clear."],
     lightning: ["Move into a substantial enclosed building or hard-topped vehicle.", "Avoid open fields, isolated trees, hilltops, water and metal objects.", "Wait at least 30 minutes after the last thunder before returning outdoors."],
     road_accident: ["Move away from traffic if you can do so safely.", "Call 112 and give the exact location and number of injured people.", "Do not move seriously injured people unless there is immediate danger; do not remove a motorcyclist's helmet."],
-    medical: ["🩸 Apply firm, steady pressure to the cut with clean gauze or cloth; keep pressure on it.", "✋ Raise the injured hand if this does not cause more pain, and remove rings before swelling starts.", "🚫 Do not pull out anything embedded in the wound; do not keep lifting the cloth to check.", "🚑 Get urgent medical care for a deep/gaping wound, numbness, loss of movement, spurting or uncontrolled bleeding; call 112 for severe bleeding or immediate danger."],
+    medical: ["🩸 Apply firm, steady pressure to the cut with clean gauze or cloth; keep pressure on it.", "✋ Raise the injured hand if this does not cause more pain; remove rings only if they slide off easily, never force one.", "🚫 Do not pull out anything embedded in the wound; do not keep lifting the cloth to check.", "🚑 Get urgent medical care for a deep/gaping wound, numbness, loss of movement, spurting or uncontrolled bleeding; call 112 for severe bleeding or immediate danger."],
     violence: ["Move away from gunfire or the threat and seek substantial cover if possible.", "Do not approach, confront or investigate armed people or suspicious objects.", "When safe, call 112 and follow police or district authority instructions."],
     gas_leak: ["Leave the area immediately.", "Do not operate switches, appliances, flames or vehicles near the suspected leak.", "From a safe location call 112; do not re-enter until cleared."],
     unknown: ["Move away from immediate danger if possible.", "Call 112 in India and give your exact location.", "Follow official local responder instructions."],
@@ -333,7 +336,7 @@ const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
     tsunami: ["तटीय क्षेत्र में तेज या लंबे भूकंप के बाद तुरंत ऊँचे स्थान या अंदरूनी क्षेत्र में जाएँ।", "समुद्र देखने या किनारे के पास जाने के लिए प्रतीक्षा न करें।", "अधिकारियों की सुरक्षित होने की सूचना तक वहीं रहें।"],
     lightning: ["मजबूत बंद इमारत या बंद वाहन में जाएँ।", "खुले मैदान, अकेले पेड़, पहाड़ी चोटी और पानी से दूर रहें।", "आखिरी गर्जना के कम से कम 30 मिनट बाद ही बाहर जाएँ।"],
     road_accident: ["सुरक्षित हो तो खुद को यातायात से दूर करें।", "112 पर कॉल करके सटीक स्थान और घायलों की संख्या बताएँ।", "तत्काल खतरा न हो तो गंभीर घायल को न हिलाएँ; बाइक सवार का हेलमेट न हटाएँ।"],
-    medical: ["🩸 साफ कपड़े या गॉज से घाव पर लगातार सीधा दबाव दें।", "✋ दर्द न बढ़े तो घायल हाथ को ऊपर रखें और सूजन से पहले अंगूठी निकालें।", "🚫 घाव में फँसी वस्तु न निकालें और बार-बार कपड़ा हटाकर न देखें।", "🚑 गहरा घाव, सुन्नपन, उँगली न हिल पाना या न रुकता रक्तस्राव हो तो तुरंत चिकित्सा सहायता लें; तेज रक्तस्राव में 112 पर कॉल करें।"],
+    medical: ["🩸 साफ कपड़े या गॉज से घाव पर लगातार सीधा दबाव दें।", "✋ दर्द न बढ़े तो हाथ ऊपर रखें; अंगूठी केवल आसानी से निकलने पर निकालें, ज़ोर न लगाएँ।", "🚫 घाव में फँसी वस्तु न निकालें और बार-बार कपड़ा हटाकर न देखें।", "🚑 गहरा घाव, सुन्नपन, उँगली न हिल पाना या न रुकता रक्तस्राव हो तो तुरंत चिकित्सा सहायता लें; तेज रक्तस्राव में 112 पर कॉल करें।"],
     violence: ["गोलीबारी या खतरे से दूर जाएँ और संभव हो तो मजबूत आड़ लें।", "सशस्त्र लोगों या संदिग्ध वस्तुओं के पास न जाएँ और सामना न करें।", "सुरक्षित होने पर 112 पर कॉल करें और पुलिस के निर्देश मानें।"],
     gas_leak: ["तुरंत उस स्थान से बाहर निकलें।", "स्विच, बिजली के उपकरण या आग का उपयोग न करें।", "सुरक्षित स्थान से 112 पर कॉल करें; अनुमति मिलने तक वापस न जाएँ।"],
     unknown: ["संभव हो तो तत्काल खतरे से दूर जाएँ।", "भारत में 112 पर कॉल करके सटीक स्थान बताएँ।", "स्थानीय अधिकारियों के निर्देश मानें।"],
@@ -347,7 +350,7 @@ const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
     tsunami: ["ಕರಾವಳಿಯಲ್ಲಿ ಬಲವಾದ ಅಥವಾ ದೀರ್ಘ ಭೂಕಂಪದ ನಂತರ ತಕ್ಷಣ ಎತ್ತರದ ಅಥವಾ ಒಳನಾಡಿನ ಪ್ರದೇಶಕ್ಕೆ ತೆರಳಿ.", "ಸಮುದ್ರವನ್ನು ನೋಡಲು ಕಾಯಬೇಡಿ ಅಥವಾ ತೀರದ ಹತ್ತಿರ ಹೋಗಬೇಡಿ.", "ಅಧಿಕಾರಿಗಳು ಸುರಕ್ಷಿತವೆಂದು ಘೋಷಿಸುವವರೆಗೆ ಸುರಕ್ಷಿತ ಸ್ಥಳದಲ್ಲೇ ಇರಿ."],
     lightning: ["ಬಲವಾದ ಮುಚ್ಚಿದ ಕಟ್ಟಡ ಅಥವಾ ಮೇಲ್ಛಾವಣಿ ಇರುವ ವಾಹನದೊಳಗೆ ಹೋಗಿ.", "ತೆರೆದ ಮೈದಾನ, ಒಂಟಿ ಮರ, ಬೆಟ್ಟದ ತುದಿ ಮತ್ತು ನೀರಿನಿಂದ ದೂರವಿರಿ.", "ಕೊನೆಯ ಗುಡುಗಿನ ನಂತರ ಕನಿಷ್ಠ 30 ನಿಮಿಷ ಹೊರಗೆ ಹೋಗಬೇಡಿ."],
     road_accident: ["ಸಾಧ್ಯವಾದರೆ ಸಂಚಾರದಿಂದ ದೂರ ಸರಿಯಿರಿ.", "112ಕ್ಕೆ ಕರೆಮಾಡಿ ನಿಖರ ಸ್ಥಳ ಮತ್ತು ಗಾಯಾಳುಗಳ ಸಂಖ್ಯೆಯನ್ನು ತಿಳಿಸಿ.", "ತಕ್ಷಣದ ಅಪಾಯವಿಲ್ಲದಿದ್ದರೆ ಗಂಭೀರ ಗಾಯಾಳುವನ್ನು ಕದಲಿಸಬೇಡಿ; ಬೈಕ್ ಸವಾರನ ಹೆಲ್ಮೆಟ್ ತೆಗೆಯಬೇಡಿ."],
-    medical: ["🩸 ಸ್ವಚ್ಛ ಬಟ್ಟೆ ಅಥವಾ ಗಾಜ್‌ನಿಂದ ಗಾಯದ ಮೇಲೆ ನಿರಂತರ ನೇರ ಒತ್ತಡ ನೀಡಿ.", "✋ ನೋವು ಹೆಚ್ಚದಿದ್ದರೆ ಗಾಯಗೊಂಡ ಕೈಯನ್ನು ಮೇಲಕ್ಕೆ ಇಡಿ; ಊತ ಬರುವ ಮೊದಲು ಉಂಗುರ ತೆಗೆದುಹಾಕಿ.", "🚫 ಗಾಯದಲ್ಲಿ ಸಿಲುಕಿರುವ ವಸ್ತುವನ್ನು ಎಳೆಯಬೇಡಿ; ಬಟ್ಟೆಯನ್ನು ಪದೇಪದೇ ತೆಗೆದು ನೋಡಬೇಡಿ.", "🚑 ಆಳವಾದ ಗಾಯ, ಮರಗಟ್ಟುವಿಕೆ, ಬೆರಳು ಚಲಿಸಲಾರದ ಸ್ಥಿತಿ ಅಥವಾ ನಿಲ್ಲದ ರಕ್ತಸ್ರಾವವಿದ್ದರೆ ತಕ್ಷಣ ವೈದ್ಯಕೀಯ ನೆರವು ಪಡೆಯಿರಿ; ತೀವ್ರ ರಕ್ತಸ್ರಾವಕ್ಕೆ 112 ಕರೆಮಾಡಿ."],
+    medical: ["🩸 ಸ್ವಚ್ಛ ಬಟ್ಟೆ ಅಥವಾ ಗಾಜ್‌ನಿಂದ ಗಾಯದ ಮೇಲೆ ನಿರಂತರ ನೇರ ಒತ್ತಡ ನೀಡಿ.", "✋ ನೋವು ಹೆಚ್ಚದಿದ್ದರೆ ಕೈಯನ್ನು ಮೇಲಕ್ಕೆ ಇಡಿ; ಸುಲಭವಾಗಿ ಬಂದರೆ ಮಾತ್ರ ಉಂಗುರ ತೆಗೆಯಿರಿ, ಬಲವಂತ ಮಾಡಬೇಡಿ.", "🚫 ಗಾಯದಲ್ಲಿ ಸಿಲುಕಿರುವ ವಸ್ತುವನ್ನು ಎಳೆಯಬೇಡಿ; ಬಟ್ಟೆಯನ್ನು ಪದೇಪದೇ ತೆಗೆದು ನೋಡಬೇಡಿ.", "🚑 ಆಳವಾದ ಗಾಯ, ಮರಗಟ್ಟುವಿಕೆ, ಬೆರಳು ಚಲಿಸಲಾರದ ಸ್ಥಿತಿ ಅಥವಾ ನಿಲ್ಲದ ರಕ್ತಸ್ರಾವವಿದ್ದರೆ ತಕ್ಷಣ ವೈದ್ಯಕೀಯ ನೆರವು ಪಡೆಯಿರಿ; ತೀವ್ರ ರಕ್ತಸ್ರಾವಕ್ಕೆ 112 ಕರೆಮಾಡಿ."],
     violence: ["ಗುಂಡಿನ ದಾಳಿ ಅಥವಾ ಅಪಾಯದಿಂದ ದೂರ ಸರಿದು ಸಾಧ್ಯವಾದರೆ ಗಟ್ಟಿಯಾದ ಆವರಣ ಪಡೆಯಿರಿ.", "ಸಶಸ್ತ್ರ ವ್ಯಕ್ತಿಗಳು ಅಥವಾ ಅನುಮಾನಾಸ್ಪದ ವಸ್ತುಗಳ ಹತ್ತಿರ ಹೋಗಬೇಡಿ.", "ಸುರಕ್ಷಿತವಾದಾಗ 112ಕ್ಕೆ ಕರೆಮಾಡಿ ಮತ್ತು ಪೊಲೀಸರ ಸೂಚನೆ ಪಾಲಿಸಿ."],
     gas_leak: ["ತಕ್ಷಣ ಆ ಪ್ರದೇಶದಿಂದ ಹೊರಬನ್ನಿ.", "ಸ್ವಿಚ್, ವಿದ್ಯುತ್ ಉಪಕರಣ ಅಥವಾ ಬೆಂಕಿ ಬಳಸಬೇಡಿ.", "ಸುರಕ್ಷಿತ ಸ್ಥಳದಿಂದ 112ಕ್ಕೆ ಕರೆಮಾಡಿ; ಅನುಮತಿ ಸಿಗುವವರೆಗೆ ಹಿಂದಿರುಗಬೇಡಿ."],
     unknown: ["ಸಾಧ್ಯವಾದರೆ ತಕ್ಷಣದ ಅಪಾಯದಿಂದ ದೂರವಿರಿ.", "ಭಾರತದಲ್ಲಿ 112ಕ್ಕೆ ಕರೆಮಾಡಿ ನಿಖರ ಸ್ಥಳ ತಿಳಿಸಿ.", "ಸ್ಥಳೀಯ ಅಧಿಕಾರಿಗಳ ಸೂಚನೆಗಳನ್ನು ಪಾಲಿಸಿ."],
