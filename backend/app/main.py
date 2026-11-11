@@ -879,7 +879,7 @@ async def create_offline_package(
             latitude, longitude, min(20, radius_km)
         )
         nearby_discovered_facilities = discovery.get("items", [])
-        facility_discovery_status = discovery.get("cache_status", "available")
+        facility_discovery_status = "available"
     except Exception as exc:
         logger.warning("Facility discovery unavailable for offline package: %s", type(exc).__name__)
 
