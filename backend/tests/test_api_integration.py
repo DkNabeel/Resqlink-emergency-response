@@ -90,6 +90,7 @@ class ResQLinkApiTests(unittest.TestCase):
                     "language": "en",
                     "latitude": 12.9716,
                     "longitude": 77.5946,
+                    "include_weather": True,
                 },
             )
 
@@ -114,6 +115,7 @@ class ResQLinkApiTests(unittest.TestCase):
                     "message": "There is a fire",
                     "latitude": 12.9716,
                     "longitude": 77.5946,
+                    "include_weather": True,
                 },
             )
 
