@@ -329,6 +329,19 @@ export default function App() {
     }
   }
 
+  async function callFacility(facility: NearbyFacility) {
+    const phone = String(facility.phone ?? "").replace(/[^0-9+]/g, "");
+    if (!phone || phone.replace(/\D/g, "").length < 5) {
+      setStatus("No usable phone number is listed for this facility.");
+      return;
+    }
+    try {
+      await Linking.openURL("tel:" + phone);
+    } catch {
+      setStatus("Unable to open the phone dialer.");
+    }
+  }
+
   async function callEmergencyNumber() {
     try { await Linking.openURL("tel:112"); }
     catch { setStatus("Please dial 112 from your phone for emergency assistance"); }
@@ -585,6 +598,11 @@ export default function App() {
                     {facility.verification_status === "verified" ? "Verified project record" : "Unverified map candidate"}
                   </Text>
                 </View>
+                {facility.phone ? (
+                  <Pressable onPress={() => callFacility(facility)} style={styles.callFacilityButton}>
+                    <Text style={styles.callFacilityText}>Call</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable onPress={() => openFacilityRoute(facility)} style={styles.routeButton}>
                   <Text style={styles.routeButtonText}>Route ↗</Text>
                 </Pressable>
@@ -769,6 +787,8 @@ const styles = StyleSheet.create({
   facilityMeta: { color: "#758696", fontSize: 10, textTransform: "capitalize" },
   verifiedText: { color: "#168653", fontSize: 9, fontWeight: "800" },
   unverifiedText: { color: "#A16B1C", fontSize: 9, fontWeight: "800" },
+  callFacilityButton: { backgroundColor: "#FFF2E8", borderRadius: 9, paddingHorizontal: 11, paddingVertical: 9 },
+  callFacilityText: { color: "#9A5424", fontSize: 10, fontWeight: "900" },
   routeButton: { backgroundColor: "#EAF4F1", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
   routeButtonText: { color: "#14715F", fontSize: 10, fontWeight: "900" },
   modalShade: { flex: 1, backgroundColor: "rgba(10,25,35,0.45)", justifyContent: "center", padding: 22 },
