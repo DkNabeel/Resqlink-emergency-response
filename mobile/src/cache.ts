@@ -1,10 +1,18 @@
 import * as SQLite from "expo-sqlite";
-import type { OfflinePackage } from "./api";
+import type { NearbyFacility, OfflinePackage } from "./api";
 
 export type CachedPackage = {
   cacheKey: string;
   etag: string | null;
   payload: OfflinePackage;
+  storedAt: string;
+};
+
+export type CachedNearbyFacilities = {
+  latitude: number;
+  longitude: number;
+  radiusKm: number;
+  items: NearbyFacility[];
   storedAt: string;
 };
 
@@ -18,6 +26,14 @@ async function database() {
           "cache_key TEXT PRIMARY KEY, " +
           "etag TEXT, " +
           "payload_json TEXT NOT NULL, " +
+          "stored_at TEXT NOT NULL" +
+          ");" +
+          "CREATE TABLE IF NOT EXISTS nearby_facilities_cache (" +
+          "id INTEGER PRIMARY KEY CHECK (id = 1), " +
+          "latitude REAL NOT NULL, " +
+          "longitude REAL NOT NULL, " +
+          "radius_km REAL NOT NULL, " +
+          "items_json TEXT NOT NULL, " +
           "stored_at TEXT NOT NULL" +
           ");",
       );
@@ -96,6 +112,59 @@ export async function getLatestOfflinePackage(): Promise<CachedPackage | null> {
     };
   } catch {
     await db.runAsync("DELETE FROM offline_packages WHERE cache_key = ?", row.cache_key);
+    return null;
+  }
+}
+
+
+export async function saveNearbyFacilitiesCache(
+  latitude: number,
+  longitude: number,
+  radiusKm: number,
+  items: NearbyFacility[],
+): Promise<CachedNearbyFacilities> {
+  const db = await database();
+  const storedAt = new Date().toISOString();
+  await db.runAsync(
+    "INSERT INTO nearby_facilities_cache (id, latitude, longitude, radius_km, items_json, stored_at) " +
+      "VALUES (1, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT(id) DO UPDATE SET " +
+      "latitude = excluded.latitude, longitude = excluded.longitude, " +
+      "radius_km = excluded.radius_km, items_json = excluded.items_json, stored_at = excluded.stored_at",
+    latitude,
+    longitude,
+    radiusKm,
+    JSON.stringify(items),
+    storedAt,
+  );
+  return { latitude, longitude, radiusKm, items, storedAt };
+}
+
+export async function getNearbyFacilitiesCache(): Promise<CachedNearbyFacilities | null> {
+  const db = await database();
+  const row = await db.getFirstAsync<{
+    latitude: number;
+    longitude: number;
+    radius_km: number;
+    items_json: string;
+    stored_at: string;
+  }>(
+    "SELECT latitude, longitude, radius_km, items_json, stored_at " +
+      "FROM nearby_facilities_cache WHERE id = 1",
+  );
+  if (!row) return null;
+  try {
+    const items = JSON.parse(row.items_json) as NearbyFacility[];
+    if (!Array.isArray(items)) throw new Error("Cached facility list is invalid.");
+    return {
+      latitude: row.latitude,
+      longitude: row.longitude,
+      radiusKm: row.radius_km,
+      items,
+      storedAt: row.stored_at,
+    };
+  } catch {
+    await db.runAsync("DELETE FROM nearby_facilities_cache WHERE id = 1");
     return null;
   }
 }
