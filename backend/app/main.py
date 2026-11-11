@@ -368,6 +368,40 @@ async def emergency_chat(request: EmergencyChatRequest):
                     "verification_status": "verified",
                 })
 
+        # Include nearby community-mapped candidates in the response and AI
+        # context. They stay unverified and must never be presented as safe zones.
+        try:
+            discovery = await discover_facilities(
+                request.latitude,
+                request.longitude,
+                min(20, request.radius_km),
+            )
+            existing_keys = {
+                (
+                    str(item.get("name", "")).casefold(),
+                    round(float(item["latitude"]), 4),
+                    round(float(item["longitude"]), 4),
+                )
+                for item in nearby_facilities
+            }
+            for candidate in discovery.get("items", [])[:20]:
+                if suggested_types and candidate.get("facility_type") not in suggested_types:
+                    continue
+                key = (
+                    str(candidate.get("name", "")).casefold(),
+                    round(float(candidate["latitude"]), 4),
+                    round(float(candidate["longitude"]), 4),
+                )
+                if key in existing_keys:
+                    continue
+                nearby_facilities.append(candidate)
+                existing_keys.add(key)
+        except Exception as exc:
+            logger.warning("Emergency-chat facility discovery unavailable: %s", type(exc).__name__)
+
+        nearby_facilities.sort(key=lambda item: float(item.get("distance_km", 999)))
+        nearby_facilities = nearby_facilities[:12]
+
     ai_analysis = {"status": "disabled"}
     ai_enabled = os.getenv("AI_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
     if ai_enabled and os.getenv("GROQ_API_KEY", "").strip():
