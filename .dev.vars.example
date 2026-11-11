@@ -2,21 +2,24 @@
 # Copy this file to ".dev.vars" in the repository root.
 # Add secret values only to ".dev.vars"; never commit that file.
 
-# --- AI classification (the only API key required by the current Worker) ---
+# --- AI classification ---
 AI_ENABLED=true
 GROQ_API_KEY=
 GROQ_MODEL=qwen/qwen3.8-27b
 GROQ_FALLBACK_MODEL=openai/gpt-oss-20b
 
-# --- Public services used by this Worker (no API key required) ---
-# Weather: Open-Meteo
-# Nearby facilities: OpenStreetMap Overpass API
-# Emergency guides: curated local content; India emergency number 112
+# --- Routing / distance / estimated journey time ---
+# OpenRouteService by HeiGIT. Used by the original backend for road-based
+# driving routes, distance and estimated duration (NOT live traffic).
+# The Cloudflare Worker route endpoint still needs to be migrated before
+# this key will be used by the deployed Worker.
+OPENROUTESERVICE_API_KEY=
 
-# --- Not active in the current Cloudflare Free demo Worker ---
-# The original full backend has optional integrations for these, but the
-# current Worker does not call them. Do not generate keys unless we later
-# enable and wire these features into the Worker.
-# OPENROUTESERVICE_API_KEY=
+# --- Public services (no API key required) ---
+# Weather: Open-Meteo
+# Nearby facility discovery: OpenStreetMap Overpass API
+# Emergency guidance: curated local content; India emergency number 112
+
+# --- Other original-backend settings (not active in Cloudflare demo Worker) ---
 # FACILITY_ADMIN_TOKEN=
 # SACHET_FEED_URL=https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml
