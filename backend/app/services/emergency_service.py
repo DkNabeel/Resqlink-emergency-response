@@ -185,6 +185,28 @@ def build_emergency_response(message, language="en"):
 
     analysis = detect_emergency(message)
     category = analysis["emergency_type"]
+    detected_types = analysis["all_detected_types"] or ["unknown"]
+
+    # Keep the selected primary hazard first, but do not discard other hazards
+    # mentioned in the same message (for example, fire after an earthquake).
+    ordered_types = [category] + [
+        item for item in detected_types if item != category
+    ]
+    guidance_by_type = {
+        item: GUIDANCE[lang][item]
+        for item in ordered_types
+    }
+    combined_guidance = list(dict.fromkeys(
+        instruction
+        for item in ordered_types
+        for instruction in GUIDANCE[lang][item]
+    ))
+    recommended_facility_types = list(dict.fromkeys(
+        facility_type
+        for item in ordered_types
+        for facility_type in FACILITY_SUGGESTIONS[item]
+    ))
+
     notices = {
         "en": "General guidance only. Call 112 in India and follow official responder instructions.",
         "hi": "यह सामान्य मार्गदर्शन है। भारत में 112 पर कॉल करें और आधिकारिक बचाव निर्देशों का पालन करें।",
@@ -195,8 +217,9 @@ def build_emergency_response(message, language="en"):
         **analysis,
         "language": lang,
         "urgency": "urgent" if category != "unknown" else "undetermined",
-        "guidance": GUIDANCE[lang][category],
-        "recommended_facility_types": FACILITY_SUGGESTIONS[category],
+        "guidance": combined_guidance,
+        "guidance_by_emergency_type": guidance_by_type,
+        "recommended_facility_types": recommended_facility_types,
         "emergency_contact": EMERGENCY_CONTACT_INDIA,
         "safety_notice": notices[lang],
     }

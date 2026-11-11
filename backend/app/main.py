@@ -113,7 +113,7 @@ class EmergencyRequest(BaseModel):
     city: Optional[str] = Field(default=None, max_length=120)
     district: Optional[str] = Field(default=None, max_length=120)
     state: Optional[str] = Field(default=None, max_length=120)
-    include_weather: bool = True
+    include_weather: bool = False
     weather_forecast_hours: int = Field(default=6, ge=1, le=24)
 
 

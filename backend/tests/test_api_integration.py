@@ -460,6 +460,32 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertEqual(retrieved.status_code, 200)
         self.assertEqual(retrieved.json()["latitude"], 12.9716)
 
+    def test_emergency_weather_is_opt_in_to_keep_basic_response_fast(self):
+        from unittest.mock import AsyncMock, patch
+
+        params = {
+            "message": "There is a flood",
+            "latitude": 12.9716,
+            "longitude": 77.5946,
+        }
+        mocked_weather = AsyncMock()
+        with patch("app.main.get_weather_snapshot", mocked_weather):
+            response = self.client.post("/emergency", json=params)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["weather_context"]["status"], "not_requested")
+        mocked_weather.assert_not_awaited()
+
+        params["include_weather"] = True
+        with patch(
+            "app.main.get_weather_snapshot",
+            AsyncMock(return_value={"source": "Open-Meteo", "cache_status": "live"}),
+        ):
+            response = self.client.post("/emergency", json=params)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["weather_context"]["status"], "live")
+
     def test_weather_endpoint_can_return_provider_data(self):
         async def fake_weather(latitude, longitude, forecast_hours):
             return {

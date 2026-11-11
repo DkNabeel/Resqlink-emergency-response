@@ -60,7 +60,7 @@ POST /emergency:
 
 When both coordinates are supplied, the endpoint also requests a short Open-Meteo weather forecast by default. Set "include_weather": false to skip this provider call, or set "weather_forecast_hours" from 1 to 24. If the weather provider fails, the emergency analysis still returns and weather_context is marked unavailable.
 
-Supported response languages: en, hi, kn. The caller explicitly selects the response language. The local rule-based detector currently recognizes fire, flood, earthquake, cyclone, landslide, tsunami, lightning, gas leak, medical emergency, road accident and violence keywords. Multiple detected types are returned, with one primary category selected by a fixed priority order. This is a demo fallback, not a trained classifier or medical triage system.
+Supported response languages: en, hi, kn. The caller explicitly selects the response language. The local rule-based detector currently recognizes fire, flood, earthquake, cyclone, landslide, tsunami, lightning, gas leak, medical emergency, road accident and violence keywords. Multiple detected types are returned; guidance and suggested facility types are combined for all detected hazards, with one primary category selected by a fixed priority order. This is a demo fallback, not a trained classifier or medical triage system. Weather fetching from `/emergency` is opt-in (`include_weather=true`) so the basic emergency response does not wait on an external weather provider.
 
 The emergency response includes India's unified ERSS number 112. The Ministry of Home Affairs describes 112 as the nationwide single emergency number for police, fire, health and other emergencies: https://www.mha.gov.in/emergency-response-support-system-erss
 

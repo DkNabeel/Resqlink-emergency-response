@@ -45,6 +45,15 @@ class EmergencyIntentTests(unittest.TestCase):
         self.assertTrue(result["multiple_emergency_types_detected"])
         self.assertIn("earthquake", result["all_detected_types"])
 
+        response = build_emergency_response(
+            "There is a fire after an earthquake", "en"
+        )
+        self.assertIn("fire", response["guidance_by_emergency_type"])
+        self.assertIn("earthquake", response["guidance_by_emergency_type"])
+        self.assertTrue(any("shaking" in item.lower() for item in response["guidance"]))
+        self.assertIn("fire_station", response["recommended_facility_types"])
+        self.assertIn("shelter", response["recommended_facility_types"])
+
     def test_india_emergency_number_is_included(self):
         result = build_emergency_response("Someone is unconscious", "en")
         self.assertEqual(result["emergency_contact"]["number"], "112")
