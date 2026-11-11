@@ -44,6 +44,9 @@ export async function saveOfflinePackage(
     JSON.stringify(payload),
     storedAt,
   );
+  // Keep only the newest location package so repeated refreshes do not grow
+  // the device cache indefinitely.
+  await db.runAsync("DELETE FROM offline_packages WHERE cache_key != ?", cacheKey);
   return { cacheKey, etag, payload, storedAt };
 }
 
