@@ -62,7 +62,8 @@ Add your Groq key to the `GROQ_API_KEY=` line and save. Do not add quotes unless
 - **Open-Meteo weather:** no API key required.
 - **OpenStreetMap Overpass facility discovery:** no API key required.
 - **NDMA SACHET:** no API key, but background syncing is disabled in this stateless demo.
-- **OpenRouteService** and `FACILITY_ADMIN_TOKEN`: belong to optional features in the original full backend and are not used by this Cloudflare Worker yet. Do not create or add those keys now.
+- **OpenRouteService by HeiGIT:** requires `OPENROUTESERVICE_API_KEY`. The original backend uses it for road-based driving routes, distance and estimated journey time. It does **not** provide live traffic in the current implementation. The route service has not yet been migrated into the Cloudflare Worker, so adding the key now stores the setting in the central config but does not activate route requests from the deployed Worker.
+- `FACILITY_ADMIN_TOKEN`: belongs to an optional facility-verification feature in the original backend and is not used by this Cloudflare Worker yet.
 
 For local testing, Wrangler reads `.dev.vars`. For the deployed Worker, add the Groq key separately as a Cloudflare secret (local files are not uploaded):
 
