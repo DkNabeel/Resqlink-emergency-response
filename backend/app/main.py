@@ -281,7 +281,8 @@ async def receive_emergency(request: EmergencyRequest):
 
     if request.use_gemini and gemini_enabled:
         if os.getenv("GEMINI_API_KEY", "").strip():
-            timeout_seconds = max(3, min(18, int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "12"))))
+            # Allow up to two provider attempts, each with the minimum 10s HTTP deadline.
+            timeout_seconds = max(22, min(30, int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "22"))))
             try:
                 gemini_analysis = await asyncio.wait_for(
                     asyncio.to_thread(
