@@ -87,6 +87,53 @@ class FacilityDiscoveryTests(unittest.TestCase):
             1,
         )
 
+    def test_fails_over_to_another_overpass_instance_after_http_502(self):
+        import asyncio
+        from unittest.mock import patch
+        import httpx
+        from app.services import facility_discovery_service as service
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"elements": []}
+
+        class FakeClient:
+            def __init__(self):
+                self.urls = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def post(self, url, data):
+                self.urls.append(url)
+                if len(self.urls) == 1:
+                    request = httpx.Request("POST", url)
+                    response = httpx.Response(502, request=request)
+                    raise httpx.HTTPStatusError(
+                        "Overpass temporarily unavailable",
+                        request=request,
+                        response=response,
+                    )
+                return FakeResponse()
+
+        fake = FakeClient()
+        service.clear_discovery_cache()
+        try:
+            with patch("app.services.facility_discovery_service.httpx.AsyncClient", return_value=fake):
+                result = asyncio.run(service.discover_facilities(12.9, 77.5, 5))
+        finally:
+            service.clear_discovery_cache()
+
+        self.assertEqual(fake.urls, list(service.OVERPASS_URLS[:2]))
+        self.assertEqual(result["items"], [])
+        self.assertEqual(result["cache_status"], "live")
+
 
 if __name__ == "__main__":
     unittest.main()

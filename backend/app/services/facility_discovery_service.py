@@ -4,13 +4,22 @@ Returned places are community-mapped candidates. They are never stored or
 verified automatically and must be checked against an official local source.
 """
 import asyncio
+import os
 import time
 
 import httpx
 
 from app.services.geospatial_service import haversine_km
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Public Overpass instances are best-effort and can be overloaded. Prefer a
+# separate operator, then fail over instead of treating one HTTP 502 as no data.
+_configured_overpass_url = os.getenv("OVERPASS_URL", "").strip()
+OVERPASS_URLS = tuple(dict.fromkeys(url for url in (
+    _configured_overpass_url,
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+) if url))
 CACHE_SECONDS = 600
 _CACHE = {}
 _CACHE_LOCK = asyncio.Lock()
@@ -116,22 +125,33 @@ out center tags;
         cached = _CACHE.get(key)
         if cached and time.monotonic() - cached["at"] < CACHE_SECONDS:
             return {**cached["result"], "cache_status": "cached"}
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(12.0, connect=4.0),
-                headers={"User-Agent": "ResQLink-EmergencyResponse/1.0"},
-            ) as client:
-                response = await client.post(OVERPASS_URL, data={"data": query})
-                response.raise_for_status()
-                data = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise RuntimeError(
-                f"OpenStreetMap discovery failed: {type(exc).__name__}."
-            ) from exc
+        failures = []
+        data = None
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(6.0, connect=2.5),
+            headers={
+                "User-Agent": "ResQLink-EmergencyResponse/1.1 (emergency facility discovery)",
+                "Accept": "application/json",
+            },
+        ) as client:
+            for endpoint in OVERPASS_URLS:
+                try:
+                    response = await client.post(endpoint, data={"data": query})
+                    response.raise_for_status()
+                    candidate_data = response.json()
+                    if not isinstance(candidate_data, dict) or not isinstance(candidate_data.get("elements"), list):
+                        raise ValueError("Unexpected Overpass response shape.")
+                    data = candidate_data
+                    break
+                except (httpx.HTTPError, ValueError) as exc:
+                    failures.append(f"{endpoint}: {type(exc).__name__}")
 
-        elements = data.get("elements") if isinstance(data, dict) else None
-        if not isinstance(elements, list):
-            raise RuntimeError("OpenStreetMap returned an unexpected response.")
+        if data is None:
+            raise RuntimeError(
+                "All OpenStreetMap Overpass endpoints failed (" + "; ".join(failures) + ")."
+            )
+
+        elements = data.get("elements")
         items = normalize_overpass_elements(elements, latitude, longitude, radius_km)
         result = {
             "count": len(items),
