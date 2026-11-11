@@ -253,9 +253,14 @@ def system_status():
             },
         },
         "mobile": {
-            "native_app": "not_implemented",
-            "on_device_offline_cache": "not_implemented",
+            "native_app": "expo_react_native_source_added",
+            "foreground_gps_permission": "implemented",
+            "emergency_submission": "implemented",
+            "on_device_offline_cache": "sqlite_cache_implemented",
+            "offline_safety_guidance": "implemented",
+            "offline_map_tiles": "not_implemented",
             "push_notifications": "not_implemented",
+            "note": "Source implementation is present; device build, installation and end-to-end validation are still required.",
         },
     }
 
