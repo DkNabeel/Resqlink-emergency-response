@@ -118,6 +118,28 @@ class FacilityDiscoveryTests(unittest.TestCase):
             16: "fire_station",
         })
 
+    def test_additional_healthcare_and_emergency_tags_are_recognized(self):
+        result = normalize_overpass_elements([
+            {
+                "type": "node", "id": 101, "lat": 12.9, "lon": 77.5,
+                "tags": {"amenity": "healthcare", "name": "Local Health Centre"},
+            },
+            {
+                "type": "node", "id": 102, "lat": 12.901, "lon": 77.501,
+                "tags": {"healthcare": "centre", "name": "Rural Health Centre"},
+            },
+            {
+                "type": "node", "id": 103, "lat": 12.902, "lon": 77.502,
+                "tags": {"emergency": "shelter", "name": "Community Emergency Shelter"},
+            },
+        ], 12.9, 77.5, 5)
+        by_id = {item["osm_id"]: item["facility_type"] for item in result}
+        self.assertEqual(by_id, {
+            101: "clinic",
+            102: "clinic",
+            103: "shelter",
+        })
+
     def test_unclassified_or_out_of_radius_places_are_excluded(self):
         result = normalize_overpass_elements([
             {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5, "tags": {"amenity": "restaurant"}},
