@@ -110,8 +110,10 @@ class FacilityDiscoveryTests(unittest.TestCase):
             async def __aexit__(self, *args):
                 return None
 
-            async def post(self, url, data):
+            async def post(self, url, data, timeout=None):
                 self.urls.append(url)
+                self.timeouts = getattr(self, "timeouts", [])
+                self.timeouts.append(timeout)
                 if len(self.urls) == 1:
                     request = httpx.Request("POST", url)
                     response = httpx.Response(502, request=request)
@@ -131,6 +133,8 @@ class FacilityDiscoveryTests(unittest.TestCase):
             service.clear_discovery_cache()
 
         self.assertEqual(fake.urls, list(service.OVERPASS_URLS[:2]))
+        self.assertEqual(fake.timeouts[0].read, 35.0)
+        self.assertEqual(fake.timeouts[1].read, 12.0)
         self.assertEqual(result["items"], [])
         self.assertEqual(result["cache_status"], "live")
 
