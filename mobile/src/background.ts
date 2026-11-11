@@ -66,7 +66,8 @@ async function getBackgroundLanguage(db: SQLite.SQLiteDatabase) {
 async function refreshPackageForLocation(
   db: SQLite.SQLiteDatabase,
   latitude: number,
-  longitude: number
+  longitude: number,
+  locality: { city?: string; district?: string; state?: string } = {}
 ) {
   if (!API_BASE_URL) return;
   const language = await getBackgroundLanguage(db);
@@ -75,6 +76,9 @@ async function refreshPackageForLocation(
     longitude: String(longitude),
     language,
     radius_km: "10",
+    ...(locality.city ? { city: locality.city } : {}),
+    ...(locality.district ? { district: locality.district } : {}),
+    ...(locality.state ? { state: locality.state } : {}),
   });
   const response = await fetch(API_BASE_URL + "/offline/package?" + query.toString(), {
     method: "GET",
@@ -94,6 +98,9 @@ async function refreshPackageForLocation(
   );
   // Replace stale area data only after the new package was fetched and stored.
   await db.runAsync("DELETE FROM offline_packages WHERE cache_key != 'background-latest'");
+
+  const notificationPermissions = await Notifications.getPermissionsAsync();
+  if (!notificationPermissions.granted) return;
 
   const alerts = payload.location_matched_official_alerts ?? [];
   for (const alert of alerts) {
@@ -133,6 +140,20 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     const db = await database();
     const { latitude, longitude, accuracy } = latest.coords;
     const deviceId = await getDeviceId(db);
+    let locality: { city?: string; district?: string; state?: string } = {};
+    try {
+      const addresses = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const address = addresses[0];
+      if (address) {
+        locality = {
+          city: address.city ?? address.subregion ?? undefined,
+          district: address.district ?? address.subregion ?? address.city ?? undefined,
+          state: address.region ?? undefined,
+        };
+      }
+    } catch {
+      // Reverse geocoding is optional; coordinates are still saved.
+    }
 
     // Keep the most recent location locally even if the backend is unreachable.
     await db.runAsync(
@@ -158,9 +179,13 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
           longitude,
           accuracy_m: accuracy ?? null,
           source: "gps",
+          city: locality.city,
+          district: locality.district,
+          state: locality.state,
+          country: "India",
         }),
       }).catch(() => null);
-      await refreshPackageForLocation(db, latitude, longitude).catch(() => null);
+      await refreshPackageForLocation(db, latitude, longitude, locality).catch(() => null);
     }
   } catch {
     // Background tasks must fail quietly; the last successfully cached package remains usable.
