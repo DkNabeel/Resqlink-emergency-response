@@ -1,4 +1,12 @@
-import { saveOfflinePackage, getCachedPackage, getLatestOfflinePackage, type CachedPackage } from "./cache";
+import {
+  saveOfflinePackage,
+  getCachedPackage,
+  getLatestOfflinePackage,
+  saveNearbyFacilitiesCache,
+  getNearbyFacilitiesCache,
+  type CachedPackage,
+  type CachedNearbyFacilities,
+} from "./cache";
 
 export type Coordinates = {
   latitude: number;
@@ -124,7 +132,7 @@ function packageKey(point: Coordinates, language: string) {
     point.longitude.toFixed(3) +
     "|" +
     language +
-    "|10"
+    "|20"
   );
 }
 
@@ -138,7 +146,7 @@ export async function downloadOfflinePackage(
     latitude: String(point.latitude),
     longitude: String(point.longitude),
     language,
-    radius_km: "10",
+    radius_km: "20",
   });
   const headers: Record<string, string> = { Accept: "application/json" };
   if (cached?.etag) headers["If-None-Match"] = cached.etag;
@@ -192,7 +200,7 @@ export async function sendEmergencyChat(input: {
 
 export async function getNearbyFacilities(
   point: Coordinates,
-  radiusKm = 10,
+  radiusKm = 20,
 ): Promise<{ count: number; items: NearbyFacility[]; source?: string; note?: string }> {
   const query = new URLSearchParams({
     latitude: String(point.latitude),
@@ -210,14 +218,33 @@ export async function getNearbyFacilities(
   return (await response.json()) as { count: number; items: NearbyFacility[]; source?: string; note?: string };
 }
 
-export async function cacheNearbyFacilities(facilities: NearbyFacility[]) {
+export async function cacheNearbyFacilities(
+  facilities: NearbyFacility[],
+  point: Coordinates,
+  radiusKm = 20,
+): Promise<CachedNearbyFacilities> {
+  // Keep an independent facility snapshot so it is saved even if the
+  // offline emergency package has not finished downloading yet.
+  const saved = await saveNearbyFacilitiesCache(
+    point.latitude,
+    point.longitude,
+    radiusKm,
+    facilities,
+  );
   const cached = await getLatestOfflinePackage();
-  if (!cached) return;
-  const payload = {
-    ...cached.payload,
-    nearby_discovered_facilities: facilities,
-  };
-  await saveOfflinePackage(cached.cacheKey, cached.etag, payload);
+  if (cached) {
+    const payload = {
+      ...cached.payload,
+      nearby_discovered_facilities: facilities,
+      facility_discovery_status: "available",
+    };
+    await saveOfflinePackage(cached.cacheKey, cached.etag, payload);
+  }
+  return saved;
+}
+
+export async function getCachedNearbyFacilities(): Promise<CachedNearbyFacilities | null> {
+  return getNearbyFacilitiesCache();
 }
 
 export async function getDrivingRoute(
