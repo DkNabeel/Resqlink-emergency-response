@@ -133,6 +133,7 @@ async def _classify_with_groq(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "Accept-Encoding": "identity",
     }
     failures = []
     timeout = httpx.Timeout(13.0, connect=5.0)
