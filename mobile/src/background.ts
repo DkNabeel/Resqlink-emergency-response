@@ -238,6 +238,15 @@ export async function startBackgroundMonitoring(): Promise<{
     };
   }
 
+  if (!notificationsEnabled) {
+    return {
+      locationEnabled: true,
+      backgroundEnabled,
+      notificationsEnabled: false,
+      message: "Notification permission is required to use ResQLink. Enable it in phone Settings.",
+    };
+  }
+
   const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
   if (!alreadyStarted) {
     await Location.startLocationUpdatesAsync(LOCATION_TASK, {
