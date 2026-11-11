@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 # Load backend/.env here as well as in individual services. FastAPI does not
@@ -221,7 +221,10 @@ def receive_emergency(request: EmergencyRequest):
     unverified_alerts = []
 
     if has_latitude and has_longitude:
+        suggested_types = set(result.get("recommended_facility_types", []))
         for facility in get_all_facilities():
+            if suggested_types and facility["facility_type"] not in suggested_types:
+                continue
             distance = haversine_km(
                 request.latitude,
                 request.longitude,
@@ -509,7 +512,7 @@ def add_facility(payload: FacilityRequest):
 def verify_facility(
     facility_id: int,
     payload: FacilityVerificationRequest,
-    x_admin_token: Optional[str] = None,
+    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
 ):
     configured_token = os.getenv("FACILITY_ADMIN_TOKEN", "")
     if not configured_token:

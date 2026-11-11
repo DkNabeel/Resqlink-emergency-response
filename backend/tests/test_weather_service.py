@@ -73,18 +73,16 @@ class WeatherCacheTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(weather_service, "_fetch_open_meteo", fetch):
             await weather_service.get_weather_snapshot(12.97, 77.59, 3)
 
+        # Force the cached entry outside the fresh TTL but within the stale fallback window.
+        cache_key = (12.97, 77.59, 3)
+        weather_service._CACHE[cache_key]["cached_at"] -= 700
         with patch.object(
             weather_service,
             "_fetch_open_meteo",
             AsyncMock(side_effect=weather_service.WeatherServiceError("offline")),
         ):
-            with patch.object(weather_service, "_CACHE") as cache:
-                cache.update(weather_service._CACHE)
-                # Force the only entry to be outside fresh TTL but inside stale TTL.
-                for item in cache.values():
-                    item["cached_at"] -= 700
-                with patch.dict("os.environ", {"WEATHER_CACHE_TTL_SECONDS": "600"}):
-                    result = await weather_service.get_weather_snapshot(12.97, 77.59, 3)
+            with patch.dict("os.environ", {"WEATHER_CACHE_TTL_SECONDS": "600"}):
+                result = await weather_service.get_weather_snapshot(12.97, 77.59, 3)
 
         self.assertEqual(result["cache_status"], "stale")
         self.assertIn("stale_data_warning", result)
