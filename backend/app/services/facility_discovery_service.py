@@ -47,6 +47,8 @@ def _facility_type(tags):
         "college": "education",
         "university": "education",
         "community_centre": "community_center",
+        "healthcare": "clinic",
+        "rescue_station": "other",
     }
     if amenity in amenity_types:
         return amenity_types[amenity]
@@ -55,6 +57,8 @@ def _facility_type(tags):
         "ambulance_station": "ambulance",
         "fire_service": "fire_station",
         "assembly_point": "assembly_point",
+        "shelter": "shelter",
+        "rescue": "other",
     }
     if emergency in emergency_types:
         return emergency_types[emergency]
@@ -66,6 +70,10 @@ def _facility_type(tags):
         "pharmacy": "pharmacy",
         "dentist": "clinic",
         "physiotherapist": "clinic",
+        "centre": "clinic",
+        "healthcare": "clinic",
+        "blood_bank": "clinic",
+        "birthing_centre": "clinic",
     }
     if healthcare in healthcare_types:
         return healthcare_types[healthcare]
@@ -180,9 +188,9 @@ async def discover_facilities(latitude, longitude, radius_km=5):
     query = f"""
 [out:json][timeout:25];
 (
-  nwr(around:{radius_m},{latitude},{longitude})["amenity"~"^(hospital|police|fire_station|shelter|ambulance_station|clinic|doctors|pharmacy|school|college|university|community_centre)$"];
-  nwr(around:{radius_m},{latitude},{longitude})["emergency"~"^(ambulance_station|fire_service|assembly_point)$"];
-  nwr(around:{radius_m},{latitude},{longitude})["healthcare"~"^(hospital|clinic|doctor|pharmacy|dentist|physiotherapist)$"];
+  nwr(around:{radius_m},{latitude},{longitude})["amenity"~"^(hospital|police|fire_station|shelter|ambulance_station|clinic|doctors|pharmacy|school|college|university|community_centre|healthcare|rescue_station)$"];
+  nwr(around:{radius_m},{latitude},{longitude})["emergency"~"^(ambulance_station|fire_service|assembly_point|shelter|rescue)$"];
+  nwr(around:{radius_m},{latitude},{longitude})["healthcare"~"^(hospital|clinic|doctor|pharmacy|dentist|physiotherapist|centre|healthcare|blood_bank|birthing_centre)$"];
   nwr(around:{radius_m},{latitude},{longitude})["building"~"^(school|college|university)$"];
 );
 out center tags;
@@ -254,8 +262,8 @@ out center tags;
             "excluded_element_count": max(0, len(elements) - len(items)),
             "provider_endpoint": successful_endpoint,
             "note": (
-                "Includes hospitals, clinics, pharmacies, police, fire stations, "
-                "ambulance services, shelters and nearby schools/colleges/universities. "
+                "Includes hospitals, clinics, healthcare centres, pharmacies, police, fire stations, "
+                "ambulance and rescue services, shelters and nearby schools/colleges/universities. "
                 "All are unverified OpenStreetMap candidates; education/community places "
                 "are not designated shelters unless authorities confirm them."
             ),
