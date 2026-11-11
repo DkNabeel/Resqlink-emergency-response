@@ -626,6 +626,54 @@ export default function App() {
         </Pressable>
         <Text style={styles.secureNote}>Emergency-only AI chat · GPS context · Government alerts and nearby services</Text>
 
+        {chatHistory.length > 0 ? (
+          <View style={styles.chatThread}>
+            <Text style={styles.sectionTitle}>Latest emergency update</Text>
+            {chatHistory.slice(-4).map((item, index) => (
+              <View key={String(index)} style={[styles.chatBubble, item.role === "user" ? styles.chatUser : styles.chatAssistant]}>
+                <Text style={[styles.chatBubbleText, item.role === "user" ? styles.chatUserText : styles.chatAssistantText]}>{item.content}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {result ? (
+          <View style={styles.resultCard}>
+            <View style={styles.resultTop}>
+              <View>
+                <Text style={styles.resultEyebrow}>RESPONSE SUMMARY</Text>
+                <Text style={styles.resultTitle}>{emergencyType.toUpperCase()}</Text>
+              </View>
+              <View style={[styles.aiPill, aiConnected ? styles.aiOnline : styles.aiLocal]}>
+                <View style={[styles.aiDot, aiConnected ? styles.aiDotOnline : styles.aiDotLocal]} />
+                <Text style={[styles.aiPillText, aiConnected ? styles.aiTextOnline : styles.aiTextLocal]}>{aiConnected ? "AI CONNECTED" : "LOCAL MODE"}</Text>
+              </View>
+            </View>
+            <Text style={styles.sourceText}>{aiLabel}</Text>
+            {result.in_scope === false
+              ? <Text style={styles.summary}>{result.reply ?? "ResQLink only handles emergency-related assistance."}</Text>
+              : null}
+            {result.follow_up_question ? <Text style={styles.followUp}>Follow-up: {result.follow_up_question}</Text> : null}
+            {networkError ? <Text style={styles.diagnosticWarning}>Backend connection failed: {networkError}</Text> : null}
+            {aiError && !aiConnected ? <Text style={styles.diagnosticWarning}>Groq AI unavailable: {aiError}</Text> : null}
+            {!aiConnected && !aiError && !networkError && backendConnection === "connected" && backendAiConfigured === false
+              ? <Text style={styles.diagnosticWarning}>The backend is reachable, but GROQ_API_KEY is not configured on the server.</Text>
+              : null}
+            <View style={styles.resultDivider} />
+            {instructions.length > 0 ? <Text style={styles.guidanceTitle}>Immediate safety guidance</Text> : null}
+            {instructions.map((instruction, index) => (
+              <View style={styles.instructionRow} key={String(index)}>
+                <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{index + 1}</Text></View>
+                <Text style={styles.instruction}>{instruction}</Text>
+              </View>
+            ))}
+            <Text style={styles.safetyNotice}>{result.safety_notice ?? "Follow official emergency responder instructions."}</Text>
+            {result.nearby_alerts && result.nearby_alerts.length > 0 ? <Text style={styles.sourceText}>Location-matched government alerts (check match precision): {result.nearby_alerts.length}</Text> : null}
+            {result.unverified_alerts && result.unverified_alerts.length > 0 ? <Text style={styles.diagnosticWarning}>{result.unverified_alerts.length} government alert(s) could not be confirmed for your exact location. Review their official source before acting.</Text> : null}
+            {result.weather_context && typeof result.weather_context === "object" ? <Text style={styles.sourceText}>Weather context: {String((result.weather_context as { status?: string }).status ?? "available")}</Text> : null}
+          </View>
+        ) : null}
+
         <View style={styles.locationCard}>
           <View style={styles.locationIcon}><Text style={styles.locationIconText}>⌖</Text></View>
           <View style={styles.locationCopy}>
@@ -692,54 +740,6 @@ export default function App() {
               ))}
             </MapView>
             <Text style={styles.mapNote}>Map routes are not verified against live disaster hazards. Follow official evacuation instructions.</Text>
-          </View>
-        ) : null}
-
-        {chatHistory.length > 0 ? (
-          <View style={styles.chatThread}>
-            <Text style={styles.sectionTitle}>Emergency conversation</Text>
-            {chatHistory.map((item, index) => (
-              <View key={String(index)} style={[styles.chatBubble, item.role === "user" ? styles.chatUser : styles.chatAssistant]}>
-                <Text style={[styles.chatBubbleText, item.role === "user" ? styles.chatUserText : styles.chatAssistantText]}>{item.content}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        {result ? (
-          <View style={styles.resultCard}>
-            <View style={styles.resultTop}>
-              <View>
-                <Text style={styles.resultEyebrow}>RESPONSE SUMMARY</Text>
-                <Text style={styles.resultTitle}>{emergencyType.toUpperCase()}</Text>
-              </View>
-              <View style={[styles.aiPill, aiConnected ? styles.aiOnline : styles.aiLocal]}>
-                <View style={[styles.aiDot, aiConnected ? styles.aiDotOnline : styles.aiDotLocal]} />
-                <Text style={[styles.aiPillText, aiConnected ? styles.aiTextOnline : styles.aiTextLocal]}>{aiConnected ? "AI CONNECTED" : "LOCAL MODE"}</Text>
-              </View>
-            </View>
-            <Text style={styles.sourceText}>{aiLabel}</Text>
-            {result.in_scope === false
-              ? <Text style={styles.summary}>{result.reply ?? "ResQLink only handles emergency-related assistance."}</Text>
-              : null}
-            {result.follow_up_question ? <Text style={styles.followUp}>Follow-up: {result.follow_up_question}</Text> : null}
-            {networkError ? <Text style={styles.diagnosticWarning}>Backend connection failed: {networkError}</Text> : null}
-            {aiError && !aiConnected ? <Text style={styles.diagnosticWarning}>Groq AI unavailable: {aiError}</Text> : null}
-            {!aiConnected && !aiError && !networkError && backendConnection === "connected" && backendAiConfigured === false
-              ? <Text style={styles.diagnosticWarning}>The backend is reachable, but GROQ_API_KEY is not configured on the server.</Text>
-              : null}
-            <View style={styles.resultDivider} />
-            {instructions.length > 0 ? <Text style={styles.guidanceTitle}>Immediate safety guidance</Text> : null}
-            {instructions.map((instruction, index) => (
-              <View style={styles.instructionRow} key={String(index)}>
-                <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{index + 1}</Text></View>
-                <Text style={styles.instruction}>{instruction}</Text>
-              </View>
-            ))}
-            <Text style={styles.safetyNotice}>{result.safety_notice ?? "Follow official emergency responder instructions."}</Text>
-            {result.nearby_alerts && result.nearby_alerts.length > 0 ? <Text style={styles.sourceText}>Location-matched government alerts (check match precision): {result.nearby_alerts.length}</Text> : null}
-            {result.unverified_alerts && result.unverified_alerts.length > 0 ? <Text style={styles.diagnosticWarning}>{result.unverified_alerts.length} government alert(s) could not be confirmed for your exact location. Review their official source before acting.</Text> : null}
-            {result.weather_context && typeof result.weather_context === "object" ? <Text style={styles.sourceText}>Weather context: {String((result.weather_context as { status?: string }).status ?? "available")}</Text> : null}
           </View>
         ) : null}
 
@@ -890,7 +890,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F7F5F1" },
+  safe: { flex: 1, backgroundColor: "#F7F7F7" },
   permissionGate: { flex: 1, justifyContent: "center", alignItems: "center", padding: 28, gap: 16 },
   permissionTitle: { color: "#173849", fontSize: 24, fontWeight: "900", textAlign: "center" },
   permissionBody: { color: "#617686", fontSize: 13, lineHeight: 20, textAlign: "center" },
@@ -910,14 +910,14 @@ const styles = StyleSheet.create({
   weatherPill: { backgroundColor: "#EAF4F5", borderWidth: 1, borderColor: "#D5E7E9", borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   weatherPillText: { color: "#1C6870", fontSize: 11, fontWeight: "800" },
   weatherPillArrow: { color: "#1C6870", fontSize: 15, fontWeight: "900" },
-  readyPill: { backgroundColor: "#EAF4EF", borderRadius: 30, paddingHorizontal: 11, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 6 },
+  readyPill: { backgroundColor: "#EEF1EF", borderRadius: 30, paddingHorizontal: 11, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 6 },
   readyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#1C9A65" },
-  readyText: { color: "#16734E", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  readyText: { color: "#4E675E", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
   hero: { gap: 6, paddingVertical: 4 },
-  eyebrow: { color: "#16816D", fontSize: 10, fontWeight: "900", letterSpacing: 1.8 },
-  heroTitle: { color: "#132F40", fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },
-  heroSub: { color: "#68798A", fontSize: 13, lineHeight: 20, maxWidth: 500 },
-  sosCard: { backgroundColor: "#FFF0E9", borderRadius: 18, borderWidth: 1, borderColor: "#F4D2C4", padding: 13, flexDirection: "row", alignItems: "center", gap: 12 },
+  eyebrow: { color: "#5B3733", fontSize: 10, fontWeight: "900", letterSpacing: 1.8 },
+  heroTitle: { color: "#171C20", fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },
+  heroSub: { color: "#6F7479", fontSize: 13, lineHeight: 20, maxWidth: 500 },
+  sosCard: { backgroundColor: "#FAF2EF", borderRadius: 17, borderWidth: 1, borderColor: "#EBDCD7", padding: 13, flexDirection: "row", alignItems: "center", gap: 12 },
   sosIcon: { width: 46, height: 46, backgroundColor: "#D9432F", borderRadius: 13, alignItems: "center", justifyContent: "center" },
   sosIconText: { color: "#FFFFFF", fontWeight: "900", fontSize: 17 },
   sosCopy: { flex: 1, gap: 3 },
@@ -934,33 +934,33 @@ const styles = StyleSheet.create({
   languageTextSelected: { color: "#FFFFFF" },
   quickScroller: { flexDirection: "row", gap: 8, paddingRight: 4, paddingVertical: 2 },
   quickChip: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#FFFFFF", borderRadius: 13, borderWidth: 1, borderColor: "#E7E1D8", paddingHorizontal: 13, paddingVertical: 11 },
-  quickSelected: { borderColor: "#E7663C", backgroundColor: "#FFF0E8" },
+  quickSelected: { borderColor: "#C38F6C", backgroundColor: "#F5EFEB" },
   quickChipEmoji: { fontSize: 16 },
   quickChipLabel: { color: "#4C5B67", fontSize: 11, fontWeight: "800" },
-  quickLabelSelected: { color: "#B74B2B" },
+  quickLabelSelected: { color: "#5B3733" },
   inputCard: { borderWidth: 1, borderColor: "#E6DED4", backgroundColor: "#FFFFFF", borderRadius: 19, padding: 13, gap: 8 },
   input: { height: 116, fontSize: 14, color: "#192F3D", lineHeight: 21, padding: 3 },
   inputFoot: { borderTopWidth: 1, borderColor: "#F0F2F4", paddingTop: 8 },
   inputHint: { color: "#92A0AD", fontSize: 10 },
   locationCard: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#E7E1D8", padding: 11, flexDirection: "row", alignItems: "center", gap: 10 },
-  locationIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#EAF4F5", alignItems: "center", justifyContent: "center" },
+  locationIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#F0F1F1", alignItems: "center", justifyContent: "center" },
   locationIconText: { color: "#157B70", fontSize: 23 },
   locationCopy: { flex: 1, gap: 3 },
   locationTitle: { color: "#243E50", fontSize: 12, fontWeight: "900" },
   locationSub: { color: "#83919E", fontSize: 10 },
-  locationAction: { backgroundColor: "#E8F4F1", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
-  locationActionText: { color: "#14715F", fontSize: 10, fontWeight: "900" },
-  analyzeButton: { backgroundColor: "#E65F36", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#B84A29", shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  locationAction: { backgroundColor: "#F1F1EF", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
+  locationActionText: { color: "#3F4A51", fontSize: 10, fontWeight: "900" },
+  analyzeButton: { backgroundColor: "#B94A32", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#5B3733", shadowOpacity: 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   pressed: { opacity: 0.82 },
   disabled: { opacity: 0.55 },
-  analyzeIcon: { color: "#B8F2D9", fontSize: 17, fontWeight: "900" },
+  analyzeIcon: { color: "#F6EAE5", fontSize: 17, fontWeight: "900" },
   analyzeText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", flex: 1, textAlign: "center" },
   analyzeArrow: { color: "#FFFFFF", fontSize: 20, fontWeight: "800" },
   secureNote: { textAlign: "center", color: "#91A0AD", fontSize: 9, marginTop: -10 },
-  resultCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7DED3", borderRadius: 21, padding: 17, gap: 12, shadowColor: "#403629", shadowOpacity: 0.045, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 1 },
+  resultCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5E5E2", borderRadius: 19, padding: 16, gap: 11, shadowColor: "#202020", shadowOpacity: 0.025, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
   resultTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
-  resultEyebrow: { color: "#D85A34", fontSize: 9, fontWeight: "900", letterSpacing: 1.7 },
-  resultTitle: { color: "#182C39", fontSize: 25, fontWeight: "900", textTransform: "capitalize", marginTop: 3, letterSpacing: -0.6 },
+  resultEyebrow: { color: "#5B3733", fontSize: 9, fontWeight: "900", letterSpacing: 1.7 },
+  resultTitle: { color: "#171C20", fontSize: 25, fontWeight: "900", textTransform: "capitalize", marginTop: 3, letterSpacing: -0.6 },
   aiPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 6 },
   aiOnline: { backgroundColor: "#E5F5EE" },
   aiLocal: { backgroundColor: "#EDF1F5" },
@@ -975,27 +975,27 @@ const styles = StyleSheet.create({
   resultDivider: { height: 1, backgroundColor: "#EAF0F0" },
   guidanceTitle: { color: "#1B3547", fontSize: 14, fontWeight: "900", letterSpacing: -0.2 },
   instructionRow: { flexDirection: "row", alignItems: "flex-start", gap: 9 },
-  stepNumber: { width: 27, height: 27, borderRadius: 9, backgroundColor: "#FFF0E8", alignItems: "center", justifyContent: "center" },
-  stepNumberText: { color: "#B94D2D", fontSize: 11, fontWeight: "900" },
+  stepNumber: { width: 27, height: 27, borderRadius: 9, backgroundColor: "#F2ECE9", alignItems: "center", justifyContent: "center" },
+  stepNumberText: { color: "#5B3733", fontSize: 11, fontWeight: "900" },
   instruction: { flex: 1, color: "#3E5260", fontSize: 13, lineHeight: 20, paddingTop: 2 },
   safetyNotice: { color: "#986A20", backgroundColor: "#FFF8E8", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
   toolsRow: { flexDirection: "row", gap: 9 },
   toolButton: { flex: 1, minHeight: 58, backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E7E1D8", paddingVertical: 9, alignItems: "center", justifyContent: "center", gap: 3 },
-  toolButtonSelected: { backgroundColor: "#FFF0E8", borderColor: "#ECA080" },
+  toolButtonSelected: { backgroundColor: "#F4EEEB", borderColor: "#D7C5BF" },
   toolEmoji: { fontSize: 17 },
   toolLabel: { color: "#526270", fontSize: 10, fontWeight: "900" },
-  toolLabelSelected: { color: "#B94D2D" },
+  toolLabelSelected: { color: "#5B3733" },
   mapCard: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E1D8", borderRadius: 19, padding: 12, gap: 9 },
   map: { width: "100%", height: 230, borderRadius: 11 },
   mapNote: { color: "#8C734F", fontSize: 9, lineHeight: 14 },
-  chatThread: { backgroundColor: "#FFFFFF", borderRadius: 19, borderWidth: 1, borderColor: "#E7E1D8", padding: 14, gap: 9 },
+  chatThread: { backgroundColor: "#FFFFFF", borderRadius: 19, borderWidth: 1, borderColor: "#E5E5E2", padding: 14, gap: 9 },
   chatBubble: { maxWidth: "92%", padding: 11, borderRadius: 12 },
-  chatUser: { alignSelf: "flex-end", backgroundColor: "#172F3D" },
-  chatAssistant: { alignSelf: "flex-start", backgroundColor: "#F3F1EC" },
-  chatBubbleText: { fontSize: 12, lineHeight: 18 },
+  chatUser: { alignSelf: "flex-end", backgroundColor: "#202A31" },
+  chatAssistant: { alignSelf: "flex-start", backgroundColor: "#F1F1EF" },
+  chatBubbleText: { fontSize: 13, lineHeight: 20 },
   chatUserText: { color: "#FFFFFF" },
   chatAssistantText: { color: "#2D4656" },
-  followUp: { color: "#285B53", backgroundColor: "#EAF4EF", padding: 12, borderRadius: 12, fontSize: 12, lineHeight: 18, overflow: "hidden" },
+  followUp: { color: "#4D403D", backgroundColor: "#F3EEEB", padding: 12, borderRadius: 12, fontSize: 12, lineHeight: 18, overflow: "hidden" },
   facilityCard: { backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#E2E8EE", padding: 13, gap: 10 },
   facilityHint: { color: "#8996A3", fontSize: 10, lineHeight: 15 },
   facilityRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderColor: "#EDF1F3", paddingTop: 10, gap: 9 },
@@ -1038,7 +1038,7 @@ const styles = StyleSheet.create({
   offlineWarning: { color: "#8A7450", fontSize: 9, lineHeight: 14 },
   footer: { paddingTop: 3, gap: 5, alignItems: "center" },
   footerStatus: { color: "#496273", fontSize: 11, fontWeight: "800" },
-  footerApi: { color: "#16816D", fontSize: 9, fontWeight: "800", textAlign: "center" },
+  footerApi: { color: "#5B6B64", fontSize: 9, fontWeight: "800", textAlign: "center" },
   recheckButton: { paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "#E8F4F1", borderRadius: 8 },
   recheckText: { color: "#14715F", fontSize: 10, fontWeight: "800" },
   diagnosticWarning: { color: "#9B3E2D", backgroundColor: "#FFF0EB", borderRadius: 9, padding: 10, fontSize: 10, lineHeight: 16 },
