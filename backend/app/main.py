@@ -20,7 +20,12 @@ from app.database.alert_repository import (
     get_feed_state,
     get_recent_alerts,
 )
-from app.database.facility_repository import get_all_facilities
+from app.database.facility_repository import (
+    create_facility,
+    delete_facility,
+    get_all_facilities,
+    update_facility,
+)
 from app.database.init_db import create_tables
 from app.database.location_repository import get_last_location, save_location
 from app.services.emergency_service import build_emergency_response
@@ -91,6 +96,15 @@ class EmergencyRequest(BaseModel):
     city: Optional[str] = Field(default=None, max_length=120)
     district: Optional[str] = Field(default=None, max_length=120)
     state: Optional[str] = Field(default=None, max_length=120)
+
+
+class FacilityRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    facility_type: Literal["hospital", "police", "fire_station", "ambulance", "shelter", "other"]
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    address: Optional[str] = Field(default=None, max_length=300)
+    phone: Optional[str] = Field(default=None, max_length=40)
 
 
 class LocationResolveRequest(BaseModel):
@@ -397,6 +411,47 @@ def last_known_location(device_id: str):
 def list_facilities():
     items = get_all_facilities()
     return {"count": len(items), "items": items}
+
+
+@app.post("/facilities", status_code=201)
+def add_facility(payload: FacilityRequest):
+    facility_id = create_facility(
+        name=payload.name.strip(),
+        facility_type=payload.facility_type,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        address=payload.address.strip() if payload.address else None,
+        phone=payload.phone.strip() if payload.phone else None,
+    )
+    return {
+        "status": "created",
+        "facility_id": facility_id,
+        "message": "Facility saved. Verify its details and phone number before relying on it.",
+    }
+
+
+@app.put("/facilities/{facility_id}")
+def edit_facility(facility_id: int, payload: FacilityRequest):
+    updated = update_facility(
+        facility_id=facility_id,
+        name=payload.name.strip(),
+        facility_type=payload.facility_type,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        address=payload.address.strip() if payload.address else None,
+        phone=payload.phone.strip() if payload.phone else None,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Facility not found.")
+    return {"status": "updated", "facility_id": facility_id}
+
+
+@app.delete("/facilities/{facility_id}")
+def remove_facility(facility_id: int):
+    deleted = delete_facility(facility_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Facility not found.")
+    return {"status": "deleted", "facility_id": facility_id}
 
 
 @app.get("/facilities/nearby")
