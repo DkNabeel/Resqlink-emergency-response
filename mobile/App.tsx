@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -126,15 +126,19 @@ export default function App() {
   const [routeEstimate, setRouteEstimate] = useState<RouteSummary | null>(null);
   const [routeEstimateError, setRouteEstimateError] = useState("");
   const [routeBusyFacility, setRouteBusyFacility] = useState<string | null>(null);
+  const facilityRequestSequence = useRef(0);
+  const currentGpsAvailable = useRef(false);
 
   const copy = COPY[language];
 
   async function refreshNearbyFacilities(point: Coordinates) {
     if (!isApiConfigured()) return;
+    const requestSequence = ++facilityRequestSequence.current;
     setFacilityLookupStatus("loading");
     setFacilityLookupError("");
     try {
       const found = await getNearbyFacilities(point, 10);
+      if (requestSequence !== facilityRequestSequence.current) return;
       const items = Array.isArray(found.items) ? found.items : [];
       setNearbyFacilities(items);
       setFacilityLookupStatus(items.length > 0 ? "available" : "empty");
@@ -146,6 +150,7 @@ export default function App() {
         ? `Found ${items.length} nearby facility candidate(s)`
         : "No mapped emergency facilities returned within 10 km");
     } catch (error) {
+      if (requestSequence !== facilityRequestSequence.current) return;
       const detail = error instanceof Error ? error.message : "Nearby facility lookup failed.";
       setFacilityLookupError(detail);
       setFacilityLookupStatus("error");
@@ -207,7 +212,7 @@ export default function App() {
     enableRequiredPermissions().catch(() => {});
     getLastBackgroundLocation()
       .then((saved) => {
-        if (active && saved) {
+        if (active && saved && !currentGpsAvailable.current) {
           const savedPoint = { latitude: saved.latitude, longitude: saved.longitude };
           setCoordinates(savedPoint);
           setLocationStatus("Using last saved GPS position · " + new Date(saved.recorded_at ?? Date.now()).toLocaleString());
@@ -244,6 +249,7 @@ export default function App() {
     }
     const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+    currentGpsAvailable.current = true;
     setCoordinates(point);
     void refreshNearbyFacilities(point);
     try {
