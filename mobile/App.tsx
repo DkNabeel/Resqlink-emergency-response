@@ -211,7 +211,7 @@ export default function App() {
         `Received ${items.length} facilities · ${verifiedCount} verified project records · ${osmCount} OpenStreetMap candidates`
         + (rawCount !== null ? ` · ${rawCount} raw map objects` : "")
         + (found.osm_status === "unavailable" ? " · OpenStreetMap temporarily unavailable" : "")
-        + (found.provider_endpoint ? ` · ${found.provider_endpoint.replace(/^https?:\\/\\//, "")}` : ""),
+        + (found.provider_endpoint ? ` · ${found.provider_endpoint.replace("https://", "").replace("http://", "")}` : ""),
       );
       const saved = await cacheNearbyFacilities(items, point, radiusKm).catch(() => null);
       const savedMatchesArea = Boolean(
