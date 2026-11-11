@@ -30,6 +30,18 @@ export type EmergencyResult = {
   emergency_type?: string;
   guidance?: string[];
   safety_notice?: string;
+  ai_provider?: string;
+  ai_status?: string;
+  ai_analysis?: {
+    status?: string;
+    provider?: string;
+    model?: string;
+    short_summary?: string;
+    confidence?: string;
+    key_details?: string[];
+    message?: string;
+  };
+  // Legacy aliases returned by the backend for older installed app builds.
   gemini_status?: string;
   [key: string]: unknown;
 };
@@ -98,7 +110,7 @@ export async function sendEmergency(input: {
   longitude?: number;
   radius_km: number;
   include_weather: boolean;
-  use_gemini: boolean;
+  use_ai: boolean;
 }): Promise<EmergencyResult> {
   const response = await fetch(requireApiUrl() + "/emergency", {
     method: "POST",
