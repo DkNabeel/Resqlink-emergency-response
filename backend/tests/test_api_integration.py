@@ -124,43 +124,43 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertEqual(response.json()["emergency_type"], "fire")
         self.assertEqual(response.json()["weather_context"]["status"], "unavailable")
 
-    def test_emergency_uses_gemini_classification_and_curated_guidance(self):
+    def test_emergency_uses_groq_classification_and_curated_guidance(self):
         from unittest.mock import patch
 
         fake_result = {
             "status": "connected",
-            "provider": "Google Gemini API",
+            "provider": "Groq API",
             "model": "gemini-test-model",
             "emergency_type": "gas_leak",
             "confidence": "high",
             "short_summary": "A gas leak is reported.",
             "key_details": ["Smell of gas"],
         }
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "integration-test-key"}):
-            with patch("app.main.analyze_emergency_with_gemini", return_value=fake_result):
+        with patch.dict(os.environ, {"GROQ_API_KEY": "integration-test-key"}):
+            with patch("app.main.analyze_emergency_with_groq", return_value=fake_result):
                 response = self.client.post(
                     "/emergency",
                     json={
                         "message": "There is a strange smell in the kitchen",
                         "language": "en",
-                        "use_gemini": True,
+                        "use_ai": True,
                     },
                 )
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["gemini_status"], "connected")
+        self.assertEqual(body["ai_status"], "connected")
         self.assertEqual(body["emergency_type"], "gas_leak")
-        self.assertEqual(body["method"], "gemini_classification_with_curated_guidance")
+        self.assertEqual(body["method"], "groq_classification_with_curated_guidance")
         self.assertTrue(body["guidance"])
 
-    def test_emergency_falls_back_to_local_when_gemini_fails(self):
+    def test_emergency_falls_back_to_local_when_groq_fails(self):
         from unittest.mock import patch
-        from app.services.gemini_service import GeminiServiceError
+        from app.services.ai_service import AIServiceError
 
         with patch.dict(os.environ, {"GEMINI_API_KEY": "integration-test-key"}):
             with patch(
-                "app.main.analyze_emergency_with_gemini",
-                side_effect=GeminiServiceError("test provider failure"),
+                "app.main.analyze_emergency_with_groq",
+                side_effect=AIServiceError("test provider failure"),
             ):
                 response = self.client.post(
                     "/emergency",
@@ -172,7 +172,7 @@ class ResQLinkApiTests(unittest.TestCase):
                 )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["emergency_type"], "fire")
-        self.assertEqual(response.json()["gemini_status"], "unavailable")
+        self.assertEqual(response.json()["ai_status"], "unavailable")
         self.assertTrue(response.json()["guidance"])
 
     def test_emergency_rejects_partial_coordinates(self):
@@ -257,11 +257,11 @@ class ResQLinkApiTests(unittest.TestCase):
         missing = self.client.delete(f"/facilities/{facility_id}")
         self.assertEqual(missing.status_code, 404)
 
-    def test_system_status_is_transparent_about_unimplemented_mobile_and_gemini(self):
+    def test_system_status_is_transparent_about_unimplemented_mobile_and_groq(self):
         response = self.client.get("/system/status")
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["providers"]["gemini"]["integration"], "generate_content")
+        self.assertEqual(body["providers"]["ai"]["integration"], "chat_completions_json_mode")
         self.assertEqual(body["providers"]["weather"]["provider"], "Open-Meteo")
         self.assertEqual(body["providers"]["traffic"]["provider"], "OpenRouteService (HeiGIT)")
         self.assertFalse(body["providers"]["traffic"]["live_traffic_available"])
