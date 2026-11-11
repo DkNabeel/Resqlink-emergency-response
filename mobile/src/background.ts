@@ -194,6 +194,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
 
 export async function startBackgroundMonitoring(): Promise<{
   locationEnabled: boolean;
+  backgroundEnabled: boolean;
   notificationsEnabled: boolean;
   message: string;
 }> {
@@ -201,15 +202,14 @@ export async function startBackgroundMonitoring(): Promise<{
   if (foreground.status !== "granted") {
     return {
       locationEnabled: false,
+      backgroundEnabled: false,
       notificationsEnabled: false,
-      message: "Location permission is needed for location-based emergency alerts.",
+      message: "Location permission is required to use ResQLink.",
     };
   }
 
-  const background = await Location.requestBackgroundPermissionsAsync();
   const notificationPermission = await Notifications.requestPermissionsAsync();
   const notificationsEnabled = notificationPermission.granted;
-
   await Notifications.setNotificationChannelAsync(ALERT_CHANNEL, {
     name: "Emergency alerts",
     importance: Notifications.AndroidImportance.MAX,
@@ -218,11 +218,23 @@ export async function startBackgroundMonitoring(): Promise<{
     enableVibrate: true,
   });
 
-  if (background.status !== "granted") {
+  let backgroundEnabled = false;
+  try {
+    const background = await Location.requestBackgroundPermissionsAsync();
+    backgroundEnabled = background.status === "granted";
+  } catch {
+    // Expo Go and some OS configurations cannot grant background tracking.
+    backgroundEnabled = false;
+  }
+
+  if (!backgroundEnabled) {
     return {
-      locationEnabled: false,
+      locationEnabled: true,
+      backgroundEnabled: false,
       notificationsEnabled,
-      message: "Allow background location to keep the offline area package refreshed. Foreground emergency help remains available.",
+      message: notificationsEnabled
+        ? "Foreground location and notifications are ready. Background alerting and automatic area refresh require background-location permission and a native development build."
+        : "Enable notifications in Settings. Background monitoring also requires a native development build.",
     };
   }
 
@@ -238,7 +250,7 @@ export async function startBackgroundMonitoring(): Promise<{
       showsBackgroundLocationIndicator: true,
       foregroundService: {
         notificationTitle: "ResQLink location protection is active",
-        notificationBody: "Refreshing your nearby emergency information when the device allows.",
+        notificationBody: "Refreshing nearby emergency information when the device allows.",
         notificationColor: "#147A6A",
       },
     });
@@ -246,9 +258,10 @@ export async function startBackgroundMonitoring(): Promise<{
 
   return {
     locationEnabled: true,
+    backgroundEnabled: true,
     notificationsEnabled,
     message: notificationsEnabled
-      ? "Background location monitoring enabled. Refresh timing is controlled by the phone's operating system."
-      : "Background location is enabled, but notification permission is off.",
+      ? "Location and notifications are ready. Background refresh is best-effort and controlled by the phone."
+      : "Enable notifications to receive government disaster alerts.",
   };
 }
