@@ -157,7 +157,7 @@ class ResQLinkApiTests(unittest.TestCase):
         from unittest.mock import patch
         from app.services.ai_service import AIServiceError
 
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "integration-test-key"}):
+        with patch.dict(os.environ, {"GROQ_API_KEY": "integration-test-key"}):
             with patch(
                 "app.main.analyze_emergency_with_groq",
                 side_effect=AIServiceError("test provider failure"),
