@@ -52,6 +52,13 @@ class GeminiClassificationTests(unittest.TestCase):
             client.models.generate_content.call_args_list[1].kwargs["model"],
             "fallback-model",
         )
+        client_constructor = __import__(
+            "app.services.gemini_service", fromlist=["genai"]
+        ).genai.Client
+        self.assertGreaterEqual(
+            client_constructor.call_args.kwargs["http_options"]["timeout"],
+            10000,
+        )
 
     def test_generate_content_returns_validated_result(self):
         response = MagicMock()
