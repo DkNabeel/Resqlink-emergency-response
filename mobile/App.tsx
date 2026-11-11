@@ -735,7 +735,11 @@ export default function App() {
                       {typeof facility.distance_km === "number" ? " · " + facility.distance_km.toFixed(1) + " km" : ""}
                     </Text>
                     <Text style={facility.verification_status === "verified" ? styles.verifiedText : styles.unverifiedText}>
-                      {facility.verification_status === "verified" ? "Verified project record" : "Unverified map candidate"}
+                      {facility.verification_status === "verified"
+                        ? "Verified project record"
+                        : facility.has_map_name === false
+                          ? "Inferred map label · unverified"
+                          : "Unverified map candidate"}
                     </Text>
                   </View>
                   {facility.phone ? (
