@@ -2,7 +2,7 @@
 
 ResQLink is a mobile emergency-response project. This repository currently contains the FastAPI backend, SQLite persistence, multilingual rule-based emergency intent handling, NDMA SACHET alert ingestion, geospatial matching, facility management and an on-demand weather forecast adapter.
 
-**Implementation:** The emergency endpoint uses optional Gemini intent classification when configured, with deterministic multilingual keyword detection as a fallback. Safety instructions remain curated local guidance. The native mobile application, device-side GPS permissions, on-device offline maps/cache, traffic provider and push notifications are not implemented in this backend snapshot.
+**Implementation:** The emergency endpoint uses optional Gemini intent classification when configured, with deterministic multilingual keyword detection as a fallback. Safety instructions remain curated local guidance. The Expo React Native client foundation is in mobile/. It includes foreground GPS, emergency submission and a SQLite-backed offline package cache. Full offline maps and push notification delivery are not implemented.
 
 ## Backend setup
 
@@ -140,3 +140,8 @@ POST /routes/traffic calculates one driving route with traffic-aware ETA and dis
 ## Nearby facility discovery
 
 GET /facilities/discover?latitude=12.97&longitude=77.59&radius_km=5 queries the OpenStreetMap Overpass public service. Results are not official directory records. They are unverified suggestions only, cached for 15 minutes and not inserted into the ResQLink database. Verify every real facility against an official source before setting its verification_status to verified.
+
+
+## Mobile application
+
+See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. Set EXPO_PUBLIC_API_BASE_URL to the backend's laptop LAN address; the phone and laptop must be on the same Wi-Fi for local development. The client does not include offline map tiles or push notification delivery.

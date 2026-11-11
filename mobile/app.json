@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "ResQLink",
+    "slug": "resqlink",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dk.resqlink",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "ResQLink uses your location to find relevant emergency facilities and nearby public safety alerts."
+      }
+    },
+    "android": {
+      "package": "com.dk.resqlink",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow ResQLink to use your location to provide emergency assistance."
+        }
+      ],
+      "expo-sqlite"
+    ]
+  }
+}

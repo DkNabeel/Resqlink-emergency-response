@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import app.database.connection as database_connection
+from app.services.traffic_service import TrafficNotConfigured
 from app.main import app
 from app.database.init_db import create_tables
 from app.database.facility_repository import get_all_facilities
