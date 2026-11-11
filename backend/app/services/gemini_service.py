@@ -126,6 +126,8 @@ def analyze_emergency_with_gemini(message, language="en", local_type="unknown"):
                     any(code in detail for code in ("500", "502", "503", "504"))
                     or "deadline_exceeded" in detail
                     or "deadline exceeded" in detail
+                    or "deadline expired" in detail
+                    or "deadline has expired" in detail
                     or "timed out" in detail
                     or "timeout" in detail
                     or error_name in {"readtimeout", "connecttimeout", "timeoutexception"}
