@@ -22,22 +22,56 @@ OVERPASS_URLS = tuple(dict.fromkeys(url for url in (
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ) if url))
 CACHE_SECONDS = 600
+EMPTY_CACHE_SECONDS = 20
 _CACHE = {}
 _CACHE_LOCK = asyncio.Lock()
 
 
 def _facility_type(tags):
-    amenity = str(tags.get("amenity") or "").lower()
-    emergency = str(tags.get("emergency") or "").lower()
-    healthcare = str(tags.get("healthcare") or "").lower()
-    if amenity in {"hospital", "police", "fire_station", "shelter"}:
-        return amenity
-    if emergency == "ambulance_station":
-        return "ambulance"
-    if healthcare == "hospital":
-        return "hospital"
-    if healthcare in {"clinic", "doctor"}:
-        return "other"
+    """Map useful public-service/community tags without requiring a name tag."""
+    amenity = str(tags.get("amenity") or "").strip().lower()
+    emergency = str(tags.get("emergency") or "").strip().lower()
+    healthcare = str(tags.get("healthcare") or "").strip().lower()
+    building = str(tags.get("building") or "").strip().lower()
+
+    amenity_types = {
+        "hospital": "hospital",
+        "police": "police",
+        "fire_station": "fire_station",
+        "shelter": "shelter",
+        "ambulance_station": "ambulance",
+        "clinic": "clinic",
+        "doctors": "clinic",
+        "pharmacy": "pharmacy",
+        "school": "education",
+        "college": "education",
+        "university": "education",
+        "community_centre": "community_center",
+    }
+    if amenity in amenity_types:
+        return amenity_types[amenity]
+
+    emergency_types = {
+        "ambulance_station": "ambulance",
+        "fire_service": "fire_station",
+        "assembly_point": "assembly_point",
+    }
+    if emergency in emergency_types:
+        return emergency_types[emergency]
+
+    healthcare_types = {
+        "hospital": "hospital",
+        "clinic": "clinic",
+        "doctor": "clinic",
+        "pharmacy": "pharmacy",
+        "dentist": "clinic",
+        "physiotherapist": "clinic",
+    }
+    if healthcare in healthcare_types:
+        return healthcare_types[healthcare]
+
+    if building in {"school", "college", "university"}:
+        return "education"
     return None
 
 
@@ -134,26 +168,36 @@ async def discover_facilities(latitude, longitude, radius_km=5):
 
     key = (round(latitude, 4), round(longitude, 4), round(radius_km, 1))
     cached = _CACHE.get(key)
-    if cached and time.monotonic() - cached["at"] < CACHE_SECONDS:
-        return {**cached["result"], "cache_status": "cached"}
+    if cached:
+        ttl = CACHE_SECONDS if cached["result"].get("count", 0) > 0 else EMPTY_CACHE_SECONDS
+        if time.monotonic() - cached["at"] < ttl:
+            return {**cached["result"], "cache_status": "cached"}
 
     radius_m = int(radius_km * 1000)
+    # Search all nearby emergency/public-service and community facilities,
+    # not only the facility types suggested for the currently reported hazard.
+    # Schools/colleges are shown as community places, never as verified shelters.
     query = f"""
 [out:json][timeout:25];
 (
-  nwr(around:{radius_m},{latitude},{longitude})["amenity"~"hospital|police|fire_station|shelter"];
-  nwr(around:{radius_m},{latitude},{longitude})["emergency"="ambulance_station"];
-  nwr(around:{radius_m},{latitude},{longitude})["healthcare"~"hospital|clinic|doctor"];
+  nwr(around:{radius_m},{latitude},{longitude})["amenity"~"^(hospital|police|fire_station|shelter|ambulance_station|clinic|doctors|pharmacy|school|college|university|community_centre)$"];
+  nwr(around:{radius_m},{latitude},{longitude})["emergency"~"^(ambulance_station|fire_service|assembly_point)$"];
+  nwr(around:{radius_m},{latitude},{longitude})["healthcare"~"^(hospital|clinic|doctor|pharmacy|dentist|physiotherapist)$"];
+  nwr(around:{radius_m},{latitude},{longitude})["building"~"^(school|college|university)$"];
 );
 out center tags;
 """.strip()
 
     async with _CACHE_LOCK:
         cached = _CACHE.get(key)
-        if cached and time.monotonic() - cached["at"] < CACHE_SECONDS:
-            return {**cached["result"], "cache_status": "cached"}
+        if cached:
+            ttl = CACHE_SECONDS if cached["result"].get("count", 0) > 0 else EMPTY_CACHE_SECONDS
+            if time.monotonic() - cached["at"] < ttl:
+                return {**cached["result"], "cache_status": "cached"}
         failures = []
         data = None
+        empty_response = None
+        successful_endpoint = None
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(12.0, connect=4.0),
             headers={
@@ -179,17 +223,26 @@ out center tags;
                     candidate_data = response.json()
                     if not isinstance(candidate_data, dict) or not isinstance(candidate_data.get("elements"), list):
                         raise ValueError("Unexpected Overpass response shape.")
-                    data = candidate_data
-                    break
+                    if candidate_data["elements"]:
+                        data = candidate_data
+                        successful_endpoint = endpoint
+                        break
+                    # Some public instances can return an empty snapshot while
+                    # another has the same OSM data. Try the next endpoint before
+                    # telling the app that the area has no mapped services.
+                    empty_response = candidate_data
+                    successful_endpoint = endpoint
                 except (httpx.HTTPError, ValueError) as exc:
                     failures.append(f"{endpoint}: {type(exc).__name__}")
 
+        if data is None:
+            data = empty_response
         if data is None:
             raise RuntimeError(
                 "All OpenStreetMap Overpass endpoints failed (" + "; ".join(failures) + ")."
             )
 
-        elements = data.get("elements")
+        elements = data.get("elements") or []
         items = normalize_overpass_elements(elements, latitude, longitude, radius_km)
         result = {
             "count": len(items),
@@ -197,7 +250,15 @@ out center tags;
             "source": "OpenStreetMap contributors",
             "attribution": "© OpenStreetMap contributors",
             "radius_km": radius_km,
-            "note": "All discovered places are candidates and remain unverified; check official local records.",
+            "raw_element_count": len(elements),
+            "excluded_element_count": max(0, len(elements) - len(items)),
+            "provider_endpoint": successful_endpoint,
+            "note": (
+                "Includes hospitals, clinics, pharmacies, police, fire stations, "
+                "ambulance services, shelters and nearby schools/colleges/universities. "
+                "All are unverified OpenStreetMap candidates; education/community places "
+                "are not designated shelters unless authorities confirm them."
+            ),
         }
         _CACHE[key] = {"at": time.monotonic(), "result": result}
         return {**result, "cache_status": "live"}
