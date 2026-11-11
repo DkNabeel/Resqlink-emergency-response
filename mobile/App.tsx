@@ -396,15 +396,22 @@ export default function App() {
           // Facility discovery stays independent from the urgent Groq reply.
           void refreshNearbyFacilities(point);
         }
-        setChatHistory((current) => [
-          ...current,
-          { role: "user" as const, content: submittedMessage },
-          ...(response.reply ? [{
-            role: "assistant" as const,
-            content: response.reply + (response.follow_up_question ? "\nFollow-up: " + response.follow_up_question : ""),
-          }] : []),
-        ].slice(-10));
-        setStatus("Emergency response received");
+        const assistantConnected = response.ai_status === "connected" || response.gemini_status === "connected";
+        if (assistantConnected) {
+          setChatHistory((current) => [
+            ...current,
+            { role: "user" as const, content: submittedMessage },
+            ...(response.reply ? [{
+              role: "assistant" as const,
+              content: response.reply + (response.follow_up_question ? "\nFollow-up: " + response.follow_up_question : ""),
+            }] : []),
+          ].slice(-10));
+          setStatus("Emergency response received");
+        } else {
+          // Local fallback guidance is shown in the response card, but it
+          // must not be sent back as though Groq generated it on the next turn.
+          setStatus("Local emergency guidance shown · AI conversation context preserved");
+        }
       } else {
         setStatus("ResQLink only handles emergency-related assistance");
       }
@@ -418,11 +425,8 @@ export default function App() {
       const offlineReply = fallback.reply ?? (fallback.guidance ?? []).join("\n");
       setResult({ ...fallback, reply: offlineReply, diagnostic_message: reason });
       if (fallback.in_scope) {
-        setChatHistory((current) => [
-          ...current,
-          { role: "user" as const, content: submittedMessage },
-          { role: "assistant" as const, content: offlineReply },
-        ].slice(-10));
+        // Keep this result visible in the response card without contaminating
+        // the live multi-turn Groq history with an offline keyword fallback.
         setStatus("Offline keyword guidance · AI and live data unavailable");
       } else {
         setStatus("ResQLink only handles emergency-related assistance");
@@ -718,7 +722,7 @@ export default function App() {
               </View>
             </View>
             <Text style={styles.sourceText}>{aiLabel}</Text>
-            {result.in_scope === false
+            {result.in_scope === false || !aiConnected
               ? <Text style={styles.summary}>{result.reply ?? "ResQLink only handles emergency-related assistance."}</Text>
               : null}
             {result.follow_up_question ? <Text style={styles.followUp}>Follow-up: {result.follow_up_question}</Text> : null}
