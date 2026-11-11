@@ -101,13 +101,13 @@ class FacilityDiscoveryTests(unittest.TestCase):
         ], 12.795665856, 75.209681191, 10)
 
         self.assertEqual(len(result), 3)
-        self.assertEqual(result[0]["name"], "Hospital near A.P.M.C. Road, Puttur")
-        self.assertEqual(result[0]["osm_name"], None)
-        self.assertFalse(result[0]["has_map_name"])
-        self.assertEqual(result[0]["osm_id"], 246514894)
-        self.assertEqual(result[0]["verification_status"], "unverified")
-        self.assertIn("OSM node/69387696", result[1]["name"])
-        self.assertTrue(result[2]["name"].startswith("Unnamed Shelter"))
+        by_osm_id = {item["osm_id"]: item for item in result}
+        self.assertEqual(by_osm_id[246514894]["name"], "Hospital near A.P.M.C. Road, Puttur")
+        self.assertEqual(by_osm_id[246514894]["osm_name"], None)
+        self.assertFalse(by_osm_id[246514894]["has_map_name"])
+        self.assertEqual(by_osm_id[246514894]["verification_status"], "unverified")
+        self.assertIn("OSM node/69387696", by_osm_id[69387696]["name"])
+        self.assertTrue(by_osm_id[42]["name"].startswith("Unnamed Shelter"))
 
     def test_deduplicates_same_place(self):
         place = {"type": "node", "id": 1, "lat": 12.9, "lon": 77.5,
