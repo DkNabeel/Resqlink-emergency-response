@@ -1,4 +1,4 @@
-import { saveOfflinePackage, getCachedPackage, type CachedPackage } from "./cache";
+import { saveOfflinePackage, getCachedPackage, getLatestOfflinePackage, type CachedPackage } from "./cache";
 
 export type Coordinates = {
   latitude: number;
@@ -319,22 +319,17 @@ const BUILT_IN_OFFLINE_GUIDANCE: Record<string, Record<string, string[]>> = {
 
 const OFFLINE_TERMS: Record<string, string[]> = {
   fire: ["fire", "smoke", "burning", "flames", "आग", "धुआँ", "जल रहा", "ಬೆಂಕಿ", "ಹೊಗೆ"],
+  flood: ["flood", "flooding", "water rising", "बाढ़", "जलभराव", "ಪ್ರವಾಹ", "ನೀರು ತುಂಬ"],
+  earthquake: ["earthquake", "tremor", "ground shaking", "भूकंप", "धरती हिल", "ಭೂಕಂಪ", "ನೆಲ ನಡುಗ"],
   cyclone: ["cyclone", "hurricane", "typhoon", "storm surge", "चक्रवात", "तूफान", "ಚಂಡಮಾರುತ", "ಸುಂಟರಗಾಳಿ"],
   landslide: ["landslide", "mudslide", "slope collapse", "falling rocks", "भूस्खलन", "पहाड़ खिसक", "ಭೂಕುಸಿತ", "ಬೆಟ್ಟ ಕುಸಿತ"],
   tsunami: ["tsunami", "sea wave warning", "ocean surge", "सुनामी", "समुद्री लहर", "ಸುನಾಮಿ"],
   lightning: ["lightning", "thunderstorm", "thunder strike", "बिजली गिर", "आकाशीय बिजली", "ಮಿಂಚು", "ಸಿಡಿಲು"],
+  gas_leak: ["gas leak", "gas smell", "गैस रिसाव", "गैस की गंध", "ಅನಿಲ ಸೋರಿಕೆ", "ಅನಿಲದ ವಾಸನೆ"],
+  medical: ["unconscious", "bleeding", "injured", "heart attack", "not breathing", "बेहोश", "रक्तस्राव", "घायल", "ಪ್ರಜ್ಞೆ ಇಲ್ಲ", "ರಕ್ತಸ್ರಾವ", "ಗಾಯ"],
   road_accident: ["road accident", "car crash", "vehicle crash", "collision", "bike accident", "सड़क हादसा", "दुर्घटना", "ರಸ್ತೆ ಅಪಘಾತ", "ವಾಹನ ಡಿಕ್ಕಿ"],
-  flood: ["flood", "flooding", "बाढ़", "ಪ್ರವಾಹ", "ನೀರು ತುಂಬ"],
-  earthquake: ["earthquake", "tremor", "भूकंप", "ಭೂಕಂಪ", "ನೆಲ ನಡುಗ"],
-  cyclone: ["cyclone", "चक्रवात", "ಚಂಡಮಾರುತ"],
-  landslide: ["landslide", "भूस्खलन", "ಭೂಕುಸಿತ", "ಬೆಟ್ಟ ಕುಸಿತ"],
-  tsunami: ["tsunami", "सुनामी", "ಸುನಾಮಿ"],
-  lightning: ["lightning", "thunderstorm", "बिजली गिर", "ಮಿಂಚು", "ಸಿಡಿಲು"],
-  gas_leak: ["gas leak", "gas smell", "गैस रिसाव", "ಅನಿಲ ಸೋರಿಕೆ"],
-  medical: ["unconscious", "bleeding", "बेहोश", "रक्तस्राव", "ಪ್ರಜ್ಞೆ ಇಲ್ಲ", "ರಕ್ತಸ್ರಾವ"],
-  road_accident: ["road accident", "car crash", "दुर्घटना", "ರಸ್ತೆ ಅಪಘಾತ"],
   violence: ["assault", "attack", "attacker", "gunfire", "gunshots", "shooting", "war", "war zone", "armed conflict", "bombing", "air raid", "shelling", "missile", "explosion", "bomb", "civil unrest", "हमला", "युद्ध", "गोलीबारी", "बमबारी", "हवाई हमला", "ದಾಳಿ", "ಹಲ್ಲೆ", "ಯುದ್ಧ", "ಗುಂಡಿನ ದಾಳಿ", "ಬಾಂಬ್ ದಾಳಿ"],
-  general: ["emergency", "help me", "sos", "trapped", "stranded", "i am stuck", "i'm stuck", "people are injured", "building collapsed", "collapse", "explosion", "debris", "danger", "मदद", "फँसा", "आपातकाल", "ಸಹಾಯ", "ಸಿಲುಕಿಕೊಂಡಿದ್ದೇನೆ", "ತುರ್ತು ಪರಿಸ್ಥಿತಿ"],
+  general: ["emergency", "help me", "sos", "trapped", "stranded", "i am stuck", "i'm stuck", "people are injured", "building collapsed", "collapse", "explosion", "debris", "danger", "मदद", "फँसा", "आपातकाल", "सहायता", "ಸಹಾಯ", "ಸಿಲುಕಿಕೊಂಡಿದ್ದೇನೆ", "ತುರ್ತು ಪರಿಸ್ಥಿತಿ"],
 };
 
 export function getOfflineGuidance(
