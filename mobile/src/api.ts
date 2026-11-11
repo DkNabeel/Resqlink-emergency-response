@@ -225,20 +225,30 @@ export async function cacheNearbyFacilities(
 ): Promise<CachedNearbyFacilities> {
   // Keep an independent facility snapshot so it is saved even if the
   // offline emergency package has not finished downloading yet.
-  const saved = await saveNearbyFacilitiesCache(
-    point.latitude,
-    point.longitude,
-    radiusKm,
-    facilities,
-  );
+  const saved = facilities.length > 0
+    ? await saveNearbyFacilitiesCache(
+        point.latitude,
+        point.longitude,
+        radiusKm,
+        facilities,
+      )
+    : await getNearbyFacilitiesCache();
   const cached = await getLatestOfflinePackage();
-  if (cached) {
+  if (cached && facilities.length > 0) {
     const payload = {
       ...cached.payload,
       nearby_discovered_facilities: facilities,
       facility_discovery_status: "available",
     };
     await saveOfflinePackage(cached.cacheKey, cached.etag, payload);
+  }
+  if (!saved) {
+    return saveNearbyFacilitiesCache(
+      point.latitude,
+      point.longitude,
+      radiusKm,
+      [],
+    );
   }
   return saved;
 }
