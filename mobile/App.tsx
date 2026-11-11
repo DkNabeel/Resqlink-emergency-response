@@ -59,6 +59,17 @@ function matchesFacilityFilter(facility: NearbyFacility, filter: FacilityFilter)
   return ["community_center", "education"].includes(type);
 }
 
+function distanceKmBetween(a: Coordinates, b: Coordinates) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const dLatitude = toRadians(b.latitude - a.latitude);
+  const dLongitude = toRadians(b.longitude - a.longitude);
+  const latitudeA = toRadians(a.latitude);
+  const latitudeB = toRadians(b.latitude);
+  const haversine = Math.sin(dLatitude / 2) ** 2
+    + Math.cos(latitudeA) * Math.cos(latitudeB) * Math.sin(dLongitude / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
 type RouteSummary = {
   facilityKey: string;
   facilityName: string;
@@ -145,6 +156,9 @@ export default function App() {
   const [nearbyFacilities, setNearbyFacilities] = useState<NearbyFacility[]>([]);
   const [cachedNearbyFacilities, setCachedNearbyFacilities] = useState<NearbyFacility[]>([]);
   const [cachedNearbyFacilitiesAt, setCachedNearbyFacilitiesAt] = useState<string | null>(null);
+  const [cachedNearbyFacilitiesLocation, setCachedNearbyFacilitiesLocation] = useState<{
+    latitude: number; longitude: number; radiusKm: number;
+  } | null>(null);
   const [facilityLookupStatus, setFacilityLookupStatus] = useState<FacilityLookupStatus>("idle");
   const [facilityLookupError, setFacilityLookupError] = useState("");
   const [routeEstimate, setRouteEstimate] = useState<RouteSummary | null>(null);
@@ -175,6 +189,9 @@ export default function App() {
     const requestSequence = ++facilityRequestSequence.current;
     setFacilityLookupStatus("loading");
     setFacilityLookupError("");
+    // Never leave a previous GPS area's live results on screen while the
+    // next location is being searched.
+    setNearbyFacilities([]);
     try {
       const found = await getNearbyFacilities(point, radiusKm);
       if (requestSequence !== facilityRequestSequence.current) return;
@@ -182,9 +199,26 @@ export default function App() {
       setNearbyFacilities(items);
       setFacilityLookupStatus(items.length > 0 ? "available" : "empty");
       const saved = await cacheNearbyFacilities(items, point, radiusKm).catch(() => null);
-      if (saved && saved.items.length > 0) {
+      const savedMatchesArea = Boolean(
+        saved
+        && saved.items.length > 0
+        && saved.radiusKm >= radiusKm
+        && distanceKmBetween(point, { latitude: saved.latitude, longitude: saved.longitude }) <= 1,
+      );
+      if (savedMatchesArea && saved) {
         setCachedNearbyFacilities(saved.items);
         setCachedNearbyFacilitiesAt(saved.storedAt);
+        setCachedNearbyFacilitiesLocation({
+          latitude: saved.latitude,
+          longitude: saved.longitude,
+          radiusKm: saved.radiusKm,
+        });
+      } else if (saved) {
+        // A one-row SQLite cache may belong to the previous GPS location.
+        // Clear it instead of presenting those places as nearby here.
+        setCachedNearbyFacilities([]);
+        setCachedNearbyFacilitiesAt(null);
+        setCachedNearbyFacilitiesLocation(null);
       }
       if (items.length > 0) {
         setOfflinePackage((current) => current
@@ -193,8 +227,8 @@ export default function App() {
       }
       setStatus(items.length > 0
         ? `Found ${items.length} nearby facility candidate(s) within ${radiusKm} km`
-        : saved?.items.length
-          ? "No new live results · showing previously saved nearby facilities"
+        : savedMatchesArea
+          ? "No new live results · showing saved facilities for this area"
           : `No mapped public-service or community facilities returned within ${radiusKm} km`);
     } catch (error) {
       if (requestSequence !== facilityRequestSequence.current) return;
@@ -277,6 +311,11 @@ export default function App() {
         if (active && cached) {
           setCachedNearbyFacilities(cached.items);
           setCachedNearbyFacilitiesAt(cached.storedAt);
+          setCachedNearbyFacilitiesLocation({
+            latitude: cached.latitude,
+            longitude: cached.longitude,
+            radiusKm: cached.radiusKm,
+          });
         }
       })
       .catch(() => {});
@@ -563,16 +602,40 @@ export default function App() {
   const aiError = typeof ai?.message === "string" ? ai.message : "";
   const networkError = typeof result?.diagnostic_message === "string" ? result.diagnostic_message : "";
   const emergencyType = String(result?.emergency_type ?? "unknown").replaceAll("_", " ");
-  const packageFacilities = [
+  const packageLocation = offlinePackage?.location;
+  const packageMatchesArea = Boolean(
+    coordinates
+    && packageLocation
+    && distanceKmBetween(coordinates, packageLocation) <= 1
+    && (packageLocation.radius_km ?? 0) >= facilityRadiusKm,
+  );
+  const packageFacilities = packageMatchesArea ? [
     ...(offlinePackage?.nearby_verified_facilities ?? []),
     ...(offlinePackage?.nearby_discovered_facilities ?? []),
-  ];
+  ] : [];
+  const cachedFacilitiesMatchArea = Boolean(
+    coordinates
+    && cachedNearbyFacilitiesLocation
+    && cachedNearbyFacilitiesLocation.radiusKm >= facilityRadiusKm
+    && distanceKmBetween(coordinates, cachedNearbyFacilitiesLocation) <= 1,
+  );
+  const resultLocation = result?.location_used as Coordinates | undefined;
+  const resultMatchesArea = Boolean(
+    coordinates
+    && resultLocation
+    && typeof resultLocation.latitude === "number"
+    && typeof resultLocation.longitude === "number"
+    && distanceKmBetween(coordinates, resultLocation) <= 1,
+  );
+  const resultFacilities = resultMatchesArea ? (result?.nearby_facilities ?? []) : [];
   const facilities: NearbyFacility[] =
     nearbyFacilities.length > 0
       ? nearbyFacilities
-      : cachedNearbyFacilities.length > 0
+      : cachedFacilitiesMatchArea && cachedNearbyFacilities.length > 0
         ? cachedNearbyFacilities
-        : (result?.nearby_facilities?.length ? result.nearby_facilities : packageFacilities);
+        : resultFacilities.length > 0
+          ? resultFacilities
+          : packageFacilities;
   const visibleFacilities = facilities
     .filter((facility) => matchesFacilityFilter(facility, facilityFilter))
     .sort((a, b) => (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY))
