@@ -98,7 +98,6 @@ def analyze_emergency_with_gemini(message, language="en", local_type="unknown"):
                     contents=_prompt(message, language, local_type),
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        temperature=0.1,
                         max_output_tokens=300,
                     ),
                 )
@@ -112,8 +111,12 @@ def analyze_emergency_with_gemini(message, language="en", local_type="unknown"):
             except GeminiServiceError:
                 raise
             except Exception as exc:
-                failures.append(f"{model}: {type(exc).__name__}")
-                detail = str(exc).lower()
+                status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+                raw_detail = getattr(exc, "message", None) or str(exc)
+                safe_detail = str(raw_detail).replace(api_key, "[REDACTED]")[:400]
+                status_label = f"HTTP {status_code}" if status_code else type(exc).__name__
+                failures.append(f"{model}: {status_label}: {safe_detail}")
+                detail = str(raw_detail).lower()
                 error_name = type(exc).__name__.lower()
                 model_missing = (
                     "404" in detail or "not found" in detail or "unknown model" in detail
