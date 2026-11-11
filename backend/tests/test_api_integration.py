@@ -341,9 +341,9 @@ class ResQLinkApiTests(unittest.TestCase):
         self.assertFalse(body["providers"]["traffic"]["live_traffic_available"])
         self.assertTrue(body["providers"]["facility_discovery"]["results_are_unverified"])
         self.assertEqual(body["mobile"]["native_app"], "expo_react_native_source_added")
-        self.assertEqual(body["mobile"]["on_device_offline_cache"], "sqlite_cache_implemented")
-        self.assertEqual(body["mobile"]["offline_map_tiles"], "not_implemented")
-        self.assertEqual(body["mobile"]["push_notifications"], "not_implemented")
+        self.assertEqual(body["mobile"]["on_device_offline_cache"], "sqlite_latest_package_cache")
+        self.assertEqual(body["mobile"]["offline_map_tiles_and_road_routing"], "not_implemented")
+        self.assertEqual(body["mobile"]["remote_push_notifications"], "not_implemented")
 
     def test_blank_inputs_are_rejected(self):
         emergency = self.client.post("/emergency", json={"message": "   "})
