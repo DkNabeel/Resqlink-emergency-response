@@ -892,7 +892,7 @@ async def create_offline_package(
             latitude, longitude, min(20, radius_km)
         )
         nearby_discovered_facilities = discovery.get("items", [])
-        facility_discovery_status = "available"
+        facility_discovery_status = "available" if nearby_discovered_facilities else "empty"
     except Exception as exc:
         logger.warning("Facility discovery unavailable for offline package: %s", type(exc).__name__)
 
@@ -935,7 +935,7 @@ async def create_offline_package(
 
     package = {
         "package_type": "resqlink_offline_emergency_package",
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": generated_at,
         "language": language,
         "location": {
