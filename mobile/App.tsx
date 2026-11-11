@@ -33,7 +33,11 @@ import {
   type WeatherSnapshot,
   type DrivingRouteEstimate,
 } from "./src/api";
-import { getLatestOfflinePackage } from "./src/cache";
+import {
+  getLatestOfflinePackage,
+  getEmergencyChatHistory,
+  saveEmergencyChatHistory,
+} from "./src/cache";
 
 type Coordinates = { latitude: number; longitude: number };
 type Language = "en" | "hi" | "kn";
@@ -150,6 +154,7 @@ export default function App() {
   const [backendConnection, setBackendConnection] = useState<"checking" | "connected" | "unreachable">("checking");
   const [backendAiConfigured, setBackendAiConfigured] = useState<boolean | null>(null);
   const [chatHistory, setChatHistory] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
   const [weatherVisible, setWeatherVisible] = useState(false);
   const [weatherBusy, setWeatherBusy] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherSnapshot | null>(null);
@@ -287,6 +292,24 @@ export default function App() {
   useEffect(() => {
     setBackgroundLanguage(language).catch(() => {});
   }, [language]);
+
+  useEffect(() => {
+    let active = true;
+    getEmergencyChatHistory()
+      .then((savedHistory) => {
+        if (active) setChatHistory(savedHistory);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setChatHistoryLoaded(true);
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!chatHistoryLoaded) return;
+    saveEmergencyChatHistory(chatHistory).catch(() => {});
+  }, [chatHistory, chatHistoryLoaded]);
 
   useEffect(() => {
     let active = true;
@@ -760,7 +783,10 @@ export default function App() {
         {chatHistory.length > 0 ? (
           <View style={styles.chatThread}>
             <View style={styles.chatHeader}>
-              <Text style={styles.sectionTitle}>Latest emergency update</Text>
+              <View style={styles.chatHeadingCopy}>
+                <Text style={styles.sectionTitle}>Latest emergency update</Text>
+                <Text style={styles.chatStorageNote}>Recent messages saved on this device for offline continuity</Text>
+              </View>
               <Pressable onPress={startNewIncident} style={styles.newIncidentButton}>
                 <Text style={styles.newIncidentText}>New incident</Text>
               </Pressable>
@@ -1186,6 +1212,8 @@ const styles = StyleSheet.create({
   mapNote: { color: "#C38F6C", fontSize: 9, lineHeight: 14 },
   chatThread: { backgroundColor: "#111111", borderRadius: 19, borderWidth: 1, borderColor: "#2C2C2C", padding: 14, gap: 9 },
   chatHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  chatHeadingCopy: { flex: 1, gap: 3 },
+  chatStorageNote: { color: "#AEABA8", fontSize: 9, lineHeight: 13 },
   newIncidentButton: { borderWidth: 1, borderColor: "#3A302D", backgroundColor: "#1A1A1A", borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7 },
   newIncidentText: { color: "#D13B2F", fontSize: 10, fontWeight: "900" },
   chatBubble: { maxWidth: "92%", padding: 11, borderRadius: 12 },
