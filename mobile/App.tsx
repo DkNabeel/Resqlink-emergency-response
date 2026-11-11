@@ -15,7 +15,7 @@ import {
 import MapView, { Marker } from "react-native-maps";
 import * as Location from "expo-location";
 import "./src/background";
-import { startBackgroundMonitoring, setBackgroundLanguage } from "./src/background";
+import { startBackgroundMonitoring, setBackgroundLanguage, getLastBackgroundLocation } from "./src/background";
 import {
   getOfflineGuidance,
   getSystemStatus,
@@ -149,6 +149,14 @@ export default function App() {
   useEffect(() => {
     let active = true;
     enableRequiredPermissions().catch(() => {});
+    getLastBackgroundLocation()
+      .then((saved) => {
+        if (active && saved && !coordinates) {
+          setCoordinates({ latitude: saved.latitude, longitude: saved.longitude });
+          setLocationStatus("Using last saved GPS position · " + new Date(saved.recorded_at ?? Date.now()).toLocaleString());
+        }
+      })
+      .catch(() => {});
     getLatestOfflinePackage()
       .then((cached) => {
         if (active && cached) setOfflinePackage(cached.payload);
@@ -242,7 +250,16 @@ export default function App() {
       let point = coordinates;
       if (!point) {
         try { point = await obtainLocation(); }
-        catch { setLocationStatus("Sending report without current GPS coordinates"); }
+        catch {
+          const saved = await getLastBackgroundLocation();
+          if (saved) {
+            point = { latitude: saved.latitude, longitude: saved.longitude };
+            setCoordinates(point);
+            setLocationStatus("Using the last saved GPS position; it may be out of date.");
+          } else {
+            setLocationStatus("Sending report without current GPS coordinates");
+          }
+        }
       }
       const response = await sendEmergencyChat({
         message: submittedMessage,
