@@ -11,7 +11,7 @@ import httpx
 from app.services.geospatial_service import haversine_km
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-CACHE_SECONDS = 900
+CACHE_SECONDS = 600
 _CACHE = {}
 _CACHE_LOCK = asyncio.Lock()
 
