@@ -206,7 +206,21 @@ export async function sendEmergencyChat(input: {
 export async function getNearbyFacilities(
   point: Coordinates,
   radiusKm = 20,
-): Promise<{ count: number; items: NearbyFacility[]; source?: string; note?: string }> {
+): Promise<{
+  count: number;
+  items: NearbyFacility[];
+  source?: string;
+  note?: string;
+  raw_element_count?: number;
+  excluded_element_count?: number;
+  provider_endpoint?: string | null;
+  cache_status?: string;
+  verified_project_count?: number;
+  osm_candidate_count?: number;
+  osm_status?: string;
+  osm_error?: string | null;
+  radius_km?: number;
+}> {
   const query = new URLSearchParams({
     latitude: String(point.latitude),
     longitude: String(point.longitude),
@@ -220,7 +234,29 @@ export async function getNearbyFacilities(
     const detail = await response.text().catch(() => "");
     throw new Error("Facility discovery failed with HTTP " + response.status + (detail ? ": " + detail.slice(0, 160) : "."));
   }
-  return (await response.json()) as { count: number; items: NearbyFacility[]; source?: string; note?: string };
+  const payload = await response.json() as {
+    count?: number;
+    items?: NearbyFacility[];
+    source?: string;
+    note?: string;
+    raw_element_count?: number;
+    excluded_element_count?: number;
+    provider_endpoint?: string | null;
+    cache_status?: string;
+    verified_project_count?: number;
+    osm_candidate_count?: number;
+    osm_status?: string;
+    osm_error?: string | null;
+    radius_km?: number;
+  };
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error("Facility discovery returned an unexpected response. Check the backend version.");
+  }
+  return {
+    ...payload,
+    count: typeof payload.count === "number" ? payload.count : payload.items.length,
+    items: payload.items,
+  };
 }
 
 export async function cacheNearbyFacilities(
