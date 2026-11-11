@@ -40,9 +40,11 @@ async def _alert_refresh_loop():
         try:
             result = await sync_sachet_feed(SACHET_FEED_URL)
             logger.info(
-                "SACHET sync finished: status=%s, items=%s",
+                "SACHET sync finished: status=%s, rss_items=%s, cap_enriched=%s, polygon_alerts=%s",
                 result["status"],
-                result["new_alerts"],
+                result.get("new_alerts", 0),
+                result.get("enriched_alerts", 0),
+                result.get("polygon_alerts", 0),
             )
         except asyncio.CancelledError:
             raise
