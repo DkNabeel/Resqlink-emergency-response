@@ -79,6 +79,42 @@ class GroqClassificationTests(unittest.TestCase):
         self.assertIn("switch to that incident", payload["messages"][0]["content"])
         self.assertIn("one specific, situation-based follow-up question", payload["messages"][0]["content"])
         self.assertEqual(payload["messages"][-2]["content"], "I smell smoke")
+        self.assertEqual(payload["response_format"]["type"], "json_schema")
+        self.assertTrue(payload["response_format"]["json_schema"]["strict"])
+
+    def test_invalid_primary_chat_json_retries_fallback_model(self):
+        request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+        invalid = httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "not-json"}}]},
+            request=request,
+        )
+        success = httpx.Response(
+            200,
+            json={"choices": [{"message": {"content":
+                '{"in_scope":true,"emergency_type":"fire","urgency":"urgent",'
+                '"reply":"Move away from the smoke.","follow_up_question":""}'
+            }}]},
+            request=request,
+        )
+        with patch.dict(os.environ, {
+            "GROQ_API_KEY": "chat-test-key",
+            "GROQ_MODEL": "primary-model",
+            "GROQ_FALLBACK_MODEL": "fallback-model",
+        }):
+            with patch("app.services.ai_service.httpx.post", side_effect=[invalid, success]) as post:
+                result = respond_to_emergency_chat(
+                    "The smoke is spreading",
+                    "en",
+                    [
+                        {"role": "user", "content": "There is a fire"},
+                        {"role": "assistant", "content": "Leave the building."},
+                    ],
+                    "fire",
+                )
+        self.assertEqual(result["status"], "connected")
+        self.assertEqual(result["model"], "fallback-model")
+        self.assertEqual(post.call_count, 2)
 
     def test_missing_key_fails_without_network(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": ""}, clear=False):
