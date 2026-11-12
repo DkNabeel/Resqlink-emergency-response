@@ -21,6 +21,11 @@ export type NearbyFacility = {
   distance_km?: number;
   distance_meters?: number;
   distance_kind?: "straight_line" | string;
+  road_distance_meters?: number | null;
+  road_distance_km?: number | null;
+  road_duration_seconds?: number | null;
+  road_duration_minutes?: number | null;
+  road_route_status?: "available" | "unreachable" | "not_calculated" | string;
   address?: string | null;
   phone?: string | null;
   source_name?: string | null;
@@ -235,6 +240,13 @@ export async function getNearbyFacilities(
   osm_candidate_count?: number;
   osm_status?: string;
   osm_error?: string | null;
+  road_distance_status?: "available" | "partial" | "unavailable" | "not_configured" | "not_needed" | string;
+  road_distance_provider?: string;
+  road_distance_candidate_count?: number;
+  road_distance_available_count?: number;
+  road_distance_error?: string | null;
+  road_distance_checked_at?: string | null;
+  road_distance_cache_status?: string | null;
   radius_km?: number;
 }> {
   const query = new URLSearchParams({
@@ -263,6 +275,13 @@ export async function getNearbyFacilities(
     osm_candidate_count?: number;
     osm_status?: string;
     osm_error?: string | null;
+    road_distance_status?: "available" | "partial" | "unavailable" | "not_configured" | "not_needed" | string;
+    road_distance_provider?: string;
+    road_distance_candidate_count?: number;
+    road_distance_available_count?: number;
+    road_distance_error?: string | null;
+    road_distance_checked_at?: string | null;
+    road_distance_cache_status?: string | null;
     radius_km?: number;
   };
   if (!payload || !Array.isArray(payload.items)) {
