@@ -1072,7 +1072,7 @@ export default function App() {
                   <Text style={[styles.facilityFilterText, facilityFilter === filter.value && styles.facilityFilterTextSelected]}>{filter.label}</Text>
                 </Pressable>
               ))}
-            </ScrollView>     </View>
+            </ScrollView>
             <Text style={styles.facilityMeta}>
               {drivingDistanceCount > 0 ? "Nearest by driving distance" : "Nearby candidates"} · Showing {visibleFacilities.length} of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
             </Text>
