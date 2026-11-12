@@ -81,6 +81,68 @@ class OpenRouteServiceRequestTests(unittest.IsolatedAsyncioTestCase):
             [[77.5946, 12.9716], [77.6245, 12.9352]],
         )
 
+    async def test_bearer_prefix_is_removed_from_heigit_authorization_header(self):
+        response = Mock()
+        response.json.return_value = SAMPLE_ORS_RESPONSE
+        response.raise_for_status.return_value = None
+
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.__aexit__.return_value = False
+        client.post.return_value = response
+
+        with (
+            patch.dict(
+                os.environ,
+                {"OPENROUTESERVICE_API_KEY": "Bearer full-test-secret"},
+                clear=True,
+            ),
+            patch.object(traffic_service.httpx, "AsyncClient", return_value=client),
+        ):
+            await traffic_service.get_traffic_route(
+                12.9716, 77.5946, 12.9352, 77.6245
+            )
+
+        self.assertEqual(
+            client.post.await_args.kwargs["headers"]["Authorization"],
+            "full-test-secret",
+        )
+
+    async def test_403_includes_provider_message_and_key_recovery_guidance(self):
+        request = httpx.Request(
+            "POST",
+            "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson",
+        )
+        response = httpx.Response(
+            403,
+            request=request,
+            json={"error": {"code": 403, "message": "Access to this API has been disallowed"}},
+        )
+
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.__aexit__.return_value = False
+        client.post.return_value = response
+
+        with (
+            patch.dict(
+                os.environ,
+                {"OPENROUTESERVICE_API_KEY": "full-test-secret"},
+                clear=True,
+            ),
+            patch.object(traffic_service.httpx, "AsyncClient", return_value=client),
+        ):
+            with self.assertRaises(traffic_service.TrafficServiceError) as raised:
+                await traffic_service.get_traffic_route(
+                    12.9716, 77.5946, 12.9352, 77.6245
+                )
+
+        message = str(raised.exception)
+        self.assertIn("HTTP 403", message)
+        self.assertIn("Access to this API has been disallowed", message)
+        self.assertIn("account.heigit.org", message)
+        self.assertNotIn("full-test-secret", message)
+
     async def test_missing_key_is_reported_without_network_call(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(traffic_service.TrafficNotConfigured):
