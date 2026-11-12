@@ -139,6 +139,7 @@ const COPY: Record<Language, { eyebrow: string; title: string; subtitle: string;
 export default function App() {
   const [language, setLanguage] = useState<Language>("en");
   const [message, setMessage] = useState("");
+  const [lastSubmittedMessage, setLastSubmittedMessage] = useState("");
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [geoDetails, setGeoDetails] = useState<{ city?: string; district?: string; state?: string }>({});
@@ -179,6 +180,7 @@ export default function App() {
   const facilityRequestSequence = useRef(0);
   const currentGpsAvailable = useRef(false);
   const mapRef = useRef<MapView | null>(null);
+  const conversationScrollRef = useRef<ScrollView | null>(null);
 
   const copy = COPY[language];
 
@@ -265,18 +267,14 @@ export default function App() {
       setPermissionsReady(ready);
       if (ready) {
         setStatus(permissions.message);
-        // Capture GPS and seed the first offline package as soon as onboarding succeeds.
+        // Get GPS and discover facilities once. The offline package is
+        // downloaded only when the user explicitly requests it.
         void (async () => {
           try {
-            const point = await obtainLocation();
-            if (isApiConfigured()) {
-              const downloaded = await downloadOfflinePackage(point, language);
-              setOfflinePackage(downloaded.payload);
-              void refreshNearbyFacilities(point);
-              setStatus("GPS ready · nearby emergency information saved for offline use");
-            }
+            await obtainLocation();
+            setStatus("GPS ready · nearby facility search started");
           } catch (error) {
-            setLocationStatus(error instanceof Error ? error.message : "GPS or offline package is not ready yet.");
+            setLocationStatus(error instanceof Error ? error.message : "GPS is not ready yet.");
           }
         })();
       }
@@ -374,7 +372,7 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  async function obtainLocation(): Promise<Coordinates> {
+  async function obtainLocation(refreshFacilities = true): Promise<Coordinates> {
     setLocationStatus("Requesting location permission...");
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== "granted") {
@@ -385,7 +383,7 @@ export default function App() {
     const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
     currentGpsAvailable.current = true;
     setCoordinates(point);
-    void refreshNearbyFacilities(point);
+    if (refreshFacilities) void refreshNearbyFacilities(point);
     try {
       const addresses = await Location.reverseGeocodeAsync(point);
       const address = addresses[0];
@@ -418,10 +416,20 @@ export default function App() {
   async function handlePackageDownload() {
     setBusy(true);
     try {
-      const point = coordinates ?? await obtainLocation();
+      // Package generation also retrieves the area's facility snapshot, so
+      // avoid starting a second independent discovery request for this GPS fix.
+      const point = coordinates ?? await obtainLocation(false);
       const response = await downloadOfflinePackage(point, language);
       setOfflinePackage(response.payload);
-      void refreshNearbyFacilities(point);
+      const packageFacilities = [
+        ...(response.payload.nearby_verified_facilities ?? []),
+        ...(response.payload.nearby_discovered_facilities ?? []),
+      ];
+      setNearbyFacilities(packageFacilities);
+      setFacilityLookupStatus(packageFacilities.length > 0 ? "available" : "empty");
+      setFacilityLookupInfo(
+        "Offline package snapshot · " + packageFacilities.length + " nearby facility record(s)",
+      );
       setStatus(response.cacheStatus === "not_modified"
         ? "Offline pack is already up to date"
         : "Emergency safety pack saved to this device");
@@ -445,6 +453,7 @@ export default function App() {
       return;
     }
     setBusy(true);
+    setLastSubmittedMessage(submittedMessage);
     setResult(null);
     try {
       let point = coordinates;
@@ -473,10 +482,6 @@ export default function App() {
       setBackendConnectionError("");
       setResult(response);
       if (response.in_scope) {
-        if (point) {
-          // Facility discovery stays independent from the urgent Groq reply.
-          void refreshNearbyFacilities(point);
-        }
         const assistantConnected = response.ai_status === "connected" || response.gemini_status === "connected";
         if (assistantConnected) {
           setChatHistory((current) => [
@@ -627,6 +632,7 @@ export default function App() {
     setChatHistory([]);
     setResult(null);
     setMessage("");
+    setLastSubmittedMessage("");
     setSelectedPrompt("");
     setRouteEstimate(null);
     setRouteEstimateError("");
