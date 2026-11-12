@@ -234,8 +234,8 @@ class FacilityDiscoveryTests(unittest.TestCase):
         self.assertGreater(items[0]["distance_meters"], 0)
         self.assertEqual(items[0]["distance_kind"], "straight_line")
         self.assertEqual(
-            items[0]["distance_meters"],
-            round(items[0]["distance_km"] * 1000),
+            items[0]["distance_km"],
+            round(items[0]["distance_meters"] / 1000, 2),
         )
 
 
