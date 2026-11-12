@@ -1059,7 +1059,7 @@ export default function App() {
           <View style={styles.facilityCard}>
             <Text style={styles.sectionTitle}>Nearby emergency facilities</Text>
             <Text style={styles.facilityHint}>
-              Search public-service candidates around your GPS location. Community-mapped places are unverified and must not be treated as confirmed safe zones.
+              Search public-service candidates around {manualMapLocation ? "your selected map pin" : "your GPS location"}. Community-mapped places are unverified and must not be treated as confirmed safe zones.
             </Text>
             <View style={styles.facilityRadiusSection}>
               <Text style={styles.facilityMeta}>Search radius</Text>
@@ -1125,14 +1125,15 @@ export default function App() {
             {facilityLookupStatus === "idle" && facilities.length === 0 ? (
               <Text style={styles.facilityHint}>Nearby facility lookup will start when GPS is ready.</Text>
             ) : null}
-            <ScrollView
-              style={styles.facilityResultsScroll}
-              contentContainerStyle={styles.facilityResultsContent}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-              keyboardShouldPersistTaps="handled"
-            >
-              {visibleFacilities.map((facility, index) => {
+            {visibleFacilities.length > 0 ? (
+              <ScrollView
+                style={styles.facilityResultsScroll}
+                contentContainerStyle={styles.facilityResultsContent}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                {visibleFacilities.map((facility, index) => {
               const key = facilityKey(facility);
               return (
                 <View key={key + "-" + index} style={styles.facilityRow}>
@@ -1160,8 +1161,9 @@ export default function App() {
                   </Pressable>
                 </View>
               );
-              })}
-            </ScrollView>
+                })}
+              </ScrollView>
+            ) : null}
             {routeEstimate ? (
               <View style={styles.routePreviewCard}>
                 <Text style={styles.facilityName}>Driving route · {routeEstimate.facilityName}</Text>
