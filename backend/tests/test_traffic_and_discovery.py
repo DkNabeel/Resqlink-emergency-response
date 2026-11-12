@@ -185,6 +185,60 @@ class FacilityDiscoveryTests(unittest.TestCase):
             1,
         )
 
+    def test_same_named_point_and_building_outline_are_deduplicated(self):
+        items = normalize_overpass_elements([
+            {
+                "type": "node", "id": 200, "lat": 12.9000, "lon": 77.5000,
+                "tags": {"name": "District Hospital", "amenity": "hospital"},
+            },
+            {
+                "type": "way", "id": 201,
+                "center": {"lat": 12.9005, "lon": 77.5000},
+                "tags": {
+                    "name": "District Hospital",
+                    "amenity": "hospital",
+                    "phone": "0824-000000",
+                    "addr:full": "Main Road",
+                },
+            },
+        ], 12.9, 77.5, 5)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["osm_id"], 201)
+        self.assertEqual(items[0]["phone"], "0824-000000")
+        self.assertEqual(items[0]["address"], "Main Road")
+
+    def test_keeps_different_nearby_facilities_even_when_coordinates_are_close(self):
+        items = normalize_overpass_elements([
+            {
+                "type": "node", "id": 210, "lat": 12.9000, "lon": 77.5000,
+                "tags": {"name": "District Hospital", "amenity": "hospital"},
+            },
+            {
+                "type": "node", "id": 211, "lat": 12.9001, "lon": 77.5000,
+                "tags": {"name": "City Hospital", "amenity": "hospital"},
+            },
+        ], 12.9, 77.5, 5)
+
+        self.assertEqual(len(items), 2)
+
+    def test_returns_metre_precision_straight_line_distance(self):
+        items = normalize_overpass_elements([
+            {
+                "type": "node", "id": 220, "lat": 12.9010, "lon": 77.5000,
+                "tags": {"name": "Nearby Hospital", "amenity": "hospital"},
+            },
+        ], 12.9, 77.5, 5)
+
+        self.assertEqual(len(items), 1)
+        self.assertGreater(items[0]["distance_meters"], 0)
+        self.assertEqual(items[0]["distance_kind"], "straight_line")
+        self.assertEqual(
+            items[0]["distance_meters"],
+            round(items[0]["distance_km"] * 1000),
+        )
+
+
     def test_fails_over_when_first_overpass_instance_returns_empty_snapshot(self):
         import asyncio
         from unittest.mock import patch
