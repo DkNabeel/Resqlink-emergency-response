@@ -37,6 +37,11 @@ export async function saveEmergencyChatHistory(history: CachedChatMessage[]): Pr
   );
 }
 
+export async function clearEmergencyChatHistory(): Promise<void> {
+  const db = await database();
+  await db.runAsync("DELETE FROM emergency_chat_history WHERE id = 1");
+}
+
 export async function getEmergencyChatHistory(): Promise<CachedChatMessage[]> {
   const db = await database();
   const row = await db.getFirstAsync<{ history_json: string }>(
