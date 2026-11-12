@@ -102,7 +102,8 @@ def _facility_type(tags):
 def _facility_name_key(value):
     import re
 
-    return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+    return " ".join(normalized.split())
 
 
 def _facility_quality_score(facility):
@@ -138,7 +139,6 @@ def _same_mapped_facility(existing, candidate):
 
 def normalize_overpass_elements(elements, origin_latitude, origin_longitude, radius_km):
     result = []
-    seen = set()
     for element in elements or []:
         tags = element.get("tags") or {}
         name = str(tags.get("name") or tags.get("name:en") or "").strip()
@@ -182,16 +182,6 @@ def normalize_overpass_elements(elements, origin_latitude, origin_longitude, rad
             display_name = f"Unnamed {facility_label} (OSM {source_type}/{source_id})"
         else:
             display_name = f"Unnamed {facility_label} at {latitude:.5f}, {longitude:.5f}"
-
-        if name:
-            identity = (facility_type, name.casefold(), round(latitude, 4), round(longitude, 4))
-        elif source_type and source_id is not None:
-            identity = ("osm", source_type, str(source_id))
-        else:
-            identity = (facility_type, display_name.casefold(), round(latitude, 4), round(longitude, 4))
-        if identity in seen:
-            continue
-        seen.add(identity)
 
         candidate = {
             "name": display_name,
