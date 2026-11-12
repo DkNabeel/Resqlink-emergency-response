@@ -786,7 +786,7 @@ async def get_traffic_route(
             destination_longitude,
         )
     except (TrafficNotConfigured, TrafficServiceError) as online_error:
-        if _local_osrm_url():
+        if _local_osrm_url() and not local_error:
             try:
                 return await get_local_osrm_route(
                     origin_latitude,
@@ -818,7 +818,7 @@ async def get_traffic_matrix(origin_latitude, origin_longitude, destinations):
             origin_latitude, origin_longitude, destinations
         )
     except (TrafficNotConfigured, TrafficServiceError) as online_error:
-        if _local_osrm_url():
+        if _local_osrm_url() and not local_error:
             try:
                 return await get_local_osrm_matrix(
                     origin_latitude, origin_longitude, destinations
