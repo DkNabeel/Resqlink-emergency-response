@@ -40,12 +40,6 @@ from app.services.emergency_service import (
 )
 from app.services.geospatial_service import haversine_km, match_alert_location
 from app.services.ai_service import AIServiceError, analyze_emergency_with_groq, respond_to_emergency_chat
-from app.services.traffic_service import (
-    TrafficNotConfigured,
-    TrafficServiceError,
-    get_traffic_matrix,
-    get_traffic_route,
-)
 from app.services.facility_discovery_service import discover_facilities
 from app.services.location_service import estimate_location_from_ip
 from app.services.sachet_service import DEFAULT_SACHET_FEED, sync_sachet_feed
@@ -151,13 +145,6 @@ class EmergencyChatRequest(BaseModel):
         return value.strip()
 
 
-class TrafficRouteRequest(BaseModel):
-    origin_latitude: float = Field(ge=-90, le=90)
-    origin_longitude: float = Field(ge=-180, le=180)
-    destination_latitude: float = Field(ge=-90, le=90)
-    destination_longitude: float = Field(ge=-180, le=180)
-
-
 class FacilityRequest(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     facility_type: Literal["hospital", "police", "fire_station", "ambulance", "shelter", "other"]
@@ -209,37 +196,6 @@ def _location_age_minutes(recorded_at):
         return None
 
 
-
-
-def _select_matrix_candidates(facilities, limit=24):
-    """Choose a balanced shortlist so one facility type cannot fill the matrix."""
-    ordered = sorted(
-        facilities,
-        key=lambda item: float(item.get("distance_meters", 10**12)),
-    )
-    grouped = {}
-    for facility in ordered:
-        facility_type = str(facility.get("facility_type") or "other").casefold()
-        grouped.setdefault(facility_type, []).append(facility)
-
-    preferred_types = [
-        "hospital", "police", "fire_station", "ambulance",
-        "clinic", "pharmacy", "shelter", "assembly_point",
-        "community_center", "education", "other",
-    ]
-    type_order = [item for item in preferred_types if item in grouped]
-    type_order.extend(sorted(item for item in grouped if item not in type_order))
-
-    selected = []
-    max_depth = max((len(items) for items in grouped.values()), default=0)
-    for depth in range(max_depth):
-        for facility_type in type_order:
-            items = grouped[facility_type]
-            if depth < len(items):
-                selected.append(items[depth])
-                if len(selected) >= limit:
-                    return selected
-    return selected
 
 
 def _format_saved_location(record, *, current=False, message=None):
@@ -295,14 +251,6 @@ def system_status():
                 "request_mode": "on-demand",
                 "api_key_required": False,
             },
-            "traffic": {
-                "provider": "OpenRouteService (HeiGIT)",
-                "api_key_configured": bool(os.getenv("OPENROUTESERVICE_API_KEY")),
-                "live_traffic_available": False,
-                "route_estimates": "road_network_based",
-                "offline_routing_configured": bool(os.getenv("OFFLINE_ROUTING_URL", "").strip()),
-                "prefer_local_routing": os.getenv("ROUTING_PREFER_LOCAL", "false").strip().lower() in {"1", "true", "yes", "on"},
-            },
             "facility_discovery": {
                 "provider": "OpenStreetMap Overpass API",
                 "api_key_required": False,
@@ -324,7 +272,8 @@ def system_status():
             "foreground_gps_permission": "required_by_app",
             "notification_permission": "required_by_app",
             "dynamic_emergency_only_groq_chat": "implemented_source_requires_live_test",
-            "online_map_and_facility_routes": "implemented_source_requires_device_test",
+            "online_map_and_google_maps_directions": "implemented_source_requires_device_test",
+            "custom_online_and_offline_routing": "deferred_for_custom_algorithm",
             "weather_popup": "implemented_source_requires_device_test",
             "nearby_facility_offline_package": "included_when_openstreetmap_discovery_succeeds",
             "on_device_offline_cache": "sqlite_latest_package_cache",
@@ -1030,23 +979,6 @@ async def create_offline_package(
     return package
 
 
-@app.post("/routes/traffic")
-async def traffic_route(payload: TrafficRouteRequest):
-    try:
-        return await get_traffic_route(
-            payload.origin_latitude,
-            payload.origin_longitude,
-            payload.destination_latitude,
-            payload.destination_longitude,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except TrafficNotConfigured as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except TrafficServiceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
 @app.get("/facilities/discover")
 async def discover_nearby_facilities(
     latitude: float = Query(ge=-90, le=90),
@@ -1118,95 +1050,17 @@ async def discover_nearby_facilities(
             continue
         seen.add(key)
         combined.append(facility)
-    # Keep straight-line proximity internal for candidate selection and radius
-    # filtering. The app list displays only the road-network values below.
-    for facility in combined:
-        facility.update({
-            "road_distance_meters": None,
-            "road_distance_km": None,
-            "road_duration_seconds": None,
-            "road_duration_minutes": None,
-            "road_route_status": "not_calculated",
-        })
-
-    matrix_candidates = _select_matrix_candidates(combined, limit=24)
-    road_distance_status = "not_needed" if not combined else "not_configured"
-    road_distance_error = None
-    road_distance_available_count = 0
-    road_distance_checked_at = None
-    road_distance_cache_status = None
-    road_distance_provider = None
-
-    if matrix_candidates:
-        try:
-            matrix = await get_traffic_matrix(
-                latitude,
-                longitude,
-                [
-                    (float(item["latitude"]), float(item["longitude"]))
-                    for item in matrix_candidates
-                ],
-            )
-            for facility, estimate in zip(matrix_candidates, matrix["items"]):
-                facility.update(estimate)
-            road_distance_available_count = sum(
-                item.get("road_route_status") == "available"
-                for item in matrix_candidates
-            )
-            road_distance_checked_at = matrix.get("checked_at")
-            road_distance_cache_status = matrix.get("cache_status")
-            road_distance_provider = matrix.get("provider")
-            road_distance_status = (
-                "available"
-                if len(matrix_candidates) == len(combined)
-                and road_distance_available_count == len(matrix_candidates)
-                else "partial"
-            )
-        except TrafficNotConfigured as exc:
-            road_distance_status = "not_configured"
-            road_distance_error = str(exc)
-        except (TrafficServiceError, ValueError) as exc:
-            road_distance_status = "unavailable"
-            road_distance_error = str(exc)[:320]
-            logger.warning("HeiGIT facility distance matrix unavailable: %s", exc)
-
-    # Keep sorting robust for older/manual facility records that may not
-    # contain a straight-line distance field.
-    def _facility_proximity_meters(item):
-        distance_meters = item.get("distance_meters")
-        if distance_meters is not None:
-            try:
-                return float(distance_meters)
-            except (TypeError, ValueError):
-                pass
-        distance_km = item.get("distance_km")
-        if distance_km is not None:
-            try:
-                return float(distance_km) * 1000
-            except (TypeError, ValueError):
-                pass
-        return float("inf")
-
-    def _facility_road_sort_key(item):
-        road_distance = item.get("road_distance_meters")
-        if isinstance(road_distance, (int, float)):
-            return (0, float(road_distance))
-        return (1, _facility_proximity_meters(item))
-
-    # Routed candidates are ordered by real road distance. Unrouted records
-    # follow them using geographic proximity only as a stable fallback.
-    combined.sort(key=_facility_road_sort_key)
+    # Every discovered facility already has a Haversine straight-line distance.
+    # Keep the finder independent of external route providers; Google Maps
+    # handles optional turn-by-turn driving directions from the mobile app.
+    combined.sort(key=lambda item: float(item.get("distance_meters", float("inf"))))
     logger.info(
-        "Facility discovery completed: radius_km=%s verified=%s osm_candidates=%s raw_map_objects=%s total=%s road_routed=%s/%s matrix_cache=%s road_status=%s osm_status=%s",
+        "Facility discovery completed: radius_km=%s verified=%s osm_candidates=%s raw_map_objects=%s total=%s osm_status=%s",
         radius_km,
         len(verified_facilities),
         len(discovery.get("items", [])),
         discovery.get("raw_element_count", 0),
         len(combined),
-        road_distance_available_count,
-        len(matrix_candidates),
-        road_distance_cache_status,
-        road_distance_status,
         osm_status,
     )
 
@@ -1218,14 +1072,10 @@ async def discover_nearby_facilities(
         "osm_candidate_count": len(discovery.get("items", [])),
         "osm_status": osm_status,
         "osm_error": osm_error,
-        "road_distance_status": road_distance_status,
-        "road_distance_provider": road_distance_provider,
-        "road_distance_candidate_count": len(matrix_candidates),
-        "road_distance_available_count": road_distance_available_count,
-        "road_distance_error": road_distance_error,
-        "road_distance_checked_at": road_distance_checked_at,
-        "road_distance_cache_status": road_distance_cache_status,
-        "important": "The app displays road-network driving distances for routed facilities. Other map candidates are not routed in this batch. Live traffic is not included; OSM candidates remain unverified.",
+        "important": (
+            "Facility distances are approximate straight-line distances, not road distances. "
+            "OpenStreetMap candidates remain unverified."
+        ),
     }
 
 
