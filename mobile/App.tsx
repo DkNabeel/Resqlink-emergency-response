@@ -641,7 +641,6 @@ export default function App() {
     setStatus("New incident started · previous chat context cleared");
   }
 
-  const instructions = result?.guidance ?? [];
   const contact = offlinePackage?.emergency_contact?.number ?? "112";
   const ai = result?.ai_analysis;
   const aiConnected = result?.ai_status === "connected" || result?.gemini_status === "connected";
@@ -651,6 +650,19 @@ export default function App() {
   const aiError = typeof ai?.message === "string" ? ai.message : "";
   const networkError = typeof result?.diagnostic_message === "string" ? result.diagnostic_message : "";
   const emergencyType = String(result?.emergency_type ?? "unknown").replaceAll("_", " ");
+  const transcriptMessages = (result
+    ? (aiConnected && result.in_scope
+      ? chatHistory
+      : [
+          ...chatHistory,
+          ...(lastSubmittedMessage ? [{ role: "user" as const, content: lastSubmittedMessage }] : []),
+          ...(result.reply ? [{
+            role: "assistant" as const,
+            content: result.reply + (result.follow_up_question ? "\nFollow-up: " + result.follow_up_question : ""),
+          }] : []),
+        ])
+    : chatHistory
+  ).slice(-10);
   const packageLocation = offlinePackage?.location;
   const packageMatchesArea = Boolean(
     coordinates
@@ -806,55 +818,45 @@ export default function App() {
         </Pressable>
         <Text style={styles.secureNote}>Emergency-only AI chat · GPS context · Government alerts and nearby services</Text>
 
-        {chatHistory.length > 0 ? (
-          <View style={styles.chatThread}>
-            <View style={styles.chatHeader}>
-              <View style={styles.chatHeadingCopy}>
-                <Text style={styles.sectionTitle}>Latest emergency update</Text>
-                <Text style={styles.chatStorageNote}>This conversation is kept only while ResQLink is open</Text>
-              </View>
-              <Pressable onPress={startNewIncident} style={styles.newIncidentButton}>
-                <Text style={styles.newIncidentText}>New incident</Text>
-              </Pressable>
-            </View>
-            {chatHistory.slice(-4).map((item, index) => (
-              <View key={String(index)} style={[styles.chatBubble, item.role === "user" ? styles.chatUser : styles.chatAssistant]}>
-                <Text style={[styles.chatBubbleText, item.role === "user" ? styles.chatUserText : styles.chatAssistantText]}>{item.content}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
         {result ? (
           <View style={styles.resultCard}>
             <View style={styles.resultTop}>
               <View>
-                <Text style={styles.resultEyebrow}>RESPONSE SUMMARY</Text>
+                <Text style={styles.resultEyebrow}>LATEST EMERGENCY RESPONSE</Text>
                 <Text style={styles.resultTitle}>{emergencyType.toUpperCase()}</Text>
               </View>
-              <View style={[styles.aiPill, aiConnected ? styles.aiOnline : styles.aiLocal]}>
-                <View style={[styles.aiDot, aiConnected ? styles.aiDotOnline : styles.aiDotLocal]} />
-                <Text style={[styles.aiPillText, aiConnected ? styles.aiTextOnline : styles.aiTextLocal]}>{aiConnected ? "AI CONNECTED" : "LOCAL MODE"}</Text>
+              <View style={styles.resultActions}>
+                <View style={[styles.aiPill, aiConnected ? styles.aiOnline : styles.aiLocal]}>
+                  <View style={[styles.aiDot, aiConnected ? styles.aiDotOnline : styles.aiDotLocal]} />
+                  <Text style={[styles.aiPillText, aiConnected ? styles.aiTextOnline : styles.aiTextLocal]}>{aiConnected ? "AI CONNECTED" : "LOCAL MODE"}</Text>
+                </View>
+                <Pressable onPress={startNewIncident} style={styles.newIncidentButton}>
+                  <Text style={styles.newIncidentText}>New incident</Text>
+                </Pressable>
               </View>
             </View>
             <Text style={styles.sourceText}>{aiLabel}</Text>
-            {result.in_scope === false || !aiConnected
-              ? <Text style={styles.summary}>{result.reply ?? "ResQLink only handles emergency-related assistance."}</Text>
-              : null}
-            {result.follow_up_question ? <Text style={styles.followUp}>Follow-up: {result.follow_up_question}</Text> : null}
+            <ScrollView
+              ref={conversationScrollRef}
+              style={styles.resultConversation}
+              contentContainerStyle={styles.resultConversationContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+              onContentSizeChange={() => conversationScrollRef.current?.scrollToEnd({ animated: true })}
+            >
+              {transcriptMessages.map((item, index) => (
+                <View key={String(index)} style={[styles.chatBubble, item.role === "user" ? styles.chatUser : styles.chatAssistant]}>
+                  <Text style={[styles.chatRole]}>{item.role === "user" ? "YOU" : "RESQLINK"}</Text>
+                  <Text style={[styles.chatBubbleText, item.role === "user" ? styles.chatUserText : styles.chatAssistantText]}>{item.content}</Text>
+                </View>
+              ))}
+            </ScrollView>
             {networkError ? <Text style={styles.diagnosticWarning}>Backend connection failed: {networkError}</Text> : null}
             {aiError && !aiConnected ? <Text style={styles.diagnosticWarning}>Groq AI unavailable: {aiError}</Text> : null}
             {!aiConnected && !aiError && !networkError && backendConnection === "connected" && backendAiConfigured === false
               ? <Text style={styles.diagnosticWarning}>The backend is reachable, but GROQ_API_KEY is not configured on the server.</Text>
               : null}
-            <View style={styles.resultDivider} />
-            {instructions.length > 0 ? <Text style={styles.guidanceTitle}>Immediate safety guidance</Text> : null}
-            {instructions.map((instruction, index) => (
-              <View style={styles.instructionRow} key={String(index)}>
-                <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{index + 1}</Text></View>
-                <Text style={styles.instruction}>{instruction}</Text>
-              </View>
-            ))}
             <Text style={styles.safetyNotice}>{result.safety_notice ?? "Follow official emergency responder instructions."}</Text>
             {result.nearby_alerts && result.nearby_alerts.length > 0 ? <Text style={styles.sourceText}>Location-matched government alerts (check match precision): {result.nearby_alerts.length}</Text> : null}
             {result.unverified_alerts && result.unverified_alerts.length > 0 ? <Text style={styles.diagnosticWarning}>{result.unverified_alerts.length} government alert(s) could not be confirmed for your exact location. Review their official source before acting.</Text> : null}
@@ -1210,6 +1212,9 @@ const styles = StyleSheet.create({
   secureNote: { textAlign: "center", color: "#AEABA8", fontSize: 9, marginTop: -10 },
   resultCard: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 19, padding: 16, gap: 11, shadowColor: "#000000", shadowOpacity: 0.20, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   resultTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  resultActions: { alignItems: "flex-end", gap: 7 },
+  resultConversation: { height: 245, maxHeight: 245, backgroundColor: "#0C0C0C", borderRadius: 12, borderWidth: 1, borderColor: "#262626" },
+  resultConversationContent: { padding: 10, gap: 9 },
   resultEyebrow: { color: "#C38F6C", fontSize: 9, fontWeight: "900", letterSpacing: 1.7 },
   resultTitle: { color: "#F7F7F7", fontSize: 25, fontWeight: "900", textTransform: "capitalize", marginTop: 3, letterSpacing: -0.6 },
   aiPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 6 },
@@ -1249,6 +1254,7 @@ const styles = StyleSheet.create({
   chatUser: { alignSelf: "flex-end", backgroundColor: "#5B3733" },
   chatAssistant: { alignSelf: "flex-start", backgroundColor: "#1A1A1A" },
   chatBubbleText: { fontSize: 13, lineHeight: 20 },
+  chatRole: { color: "#C38F6C", fontSize: 8, fontWeight: "900", letterSpacing: 1, marginBottom: 4 },
   chatUserText: { color: "#F7F7F7" },
   chatAssistantText: { color: "#F7F7F7" },
   followUp: { color: "#F7F7F7", backgroundColor: "#1B1716", borderWidth: 1, borderColor: "#5B3733", padding: 12, borderRadius: 12, fontSize: 12, lineHeight: 18, overflow: "hidden" },
