@@ -149,12 +149,44 @@ Invoke-DockerStep -Arguments @(
     "osrm-routed", "--algorithm", "mld", "/data/$MapName.osrm"
 ) -StepName "Start local offline routing server"
 
+# Configure FastAPI automatically without touching any existing API keys.
+$backendDir = Join-Path $PSScriptRoot "..\backend"
+$backendEnv = Join-Path $backendDir ".env"
+$backendExample = Join-Path $backendDir ".env.example"
+if (-not (Test-Path $backendEnv)) {
+    if (Test-Path $backendExample) {
+        Copy-Item -LiteralPath $backendExample -Destination $backendEnv
+    }
+    else {
+        New-Item -ItemType File -Path $backendEnv -Force | Out-Null
+    }
+}
+
+$envLines = @(Get-Content -LiteralPath $backendEnv)
+$routingSettings = [ordered]@{
+    "OFFLINE_ROUTING_URL" = "http://127.0.0.1:5000"
+    "ROUTING_PREFER_LOCAL" = "true"
+}
+foreach ($setting in $routingSettings.GetEnumerator()) {
+    $pattern = "^\s*" + [regex]::Escape($setting.Key) + "\s*=.*$"
+    $replacementLine = $setting.Key + "=" + $setting.Value
+    $updated = $false
+    for ($index = 0; $index -lt $envLines.Count; $index++) {
+        if ($envLines[$index] -match $pattern) {
+            $envLines[$index] = $replacementLine
+            $updated = $true
+        }
+    }
+    if (-not $updated) {
+        $envLines += $replacementLine
+    }
+}
+Set-Content -LiteralPath $backendEnv -Value $envLines -Encoding UTF8
+
 Write-Host ""
 Write-Host "Local OSRM is starting at http://127.0.0.1:5000" -ForegroundColor Green
 Write-Host "Check it with: docker logs --tail 30 resqlink-osrm"
-Write-Host "Set these two values in backend/.env:"
-Write-Host "OFFLINE_ROUTING_URL=http://127.0.0.1:5000"
-Write-Host "ROUTING_PREFER_LOCAL=true"
+Write-Host "FastAPI routing settings were written to backend/.env (existing API keys were preserved)."
 Write-Host ""
 Write-Host "The laptop now calculates routes from its downloaded Southern India road graph."
 Write-Host "Keep the laptop, Docker container, FastAPI and phone hotspot/local Wi-Fi running during offline tests."
