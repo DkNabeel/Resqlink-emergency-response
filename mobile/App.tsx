@@ -42,20 +42,24 @@ import {
 type Coordinates = { latitude: number; longitude: number };
 type Language = "en" | "hi" | "kn";
 type FacilityLookupStatus = "idle" | "loading" | "available" | "empty" | "error";
-type FacilityFilter = "all" | "medical" | "police" | "fire" | "shelter" | "community";
+type FacilityFilter = "emergency" | "medical" | "police" | "fire" | "shelter" | "community" | "all";
 const FACILITY_FILTERS: { value: FacilityFilter; label: string }[] = [
-  { value: "all", label: "All" },
+  { value: "emergency", label: "Emergency" },
   { value: "medical", label: "Medical" },
   { value: "police", label: "Police" },
   { value: "fire", label: "Fire" },
-  { value: "shelter", label: "Shelter / assembly" },
+  { value: "shelter", label: "Shelter" },
   { value: "community", label: "Community" },
+  { value: "all", label: "All places" },
 ];
 const FACILITY_RADIUS_OPTIONS = [5, 10, 20] as const;
 
 function matchesFacilityFilter(facility: NearbyFacility, filter: FacilityFilter) {
   const type = String(facility.facility_type ?? "").toLowerCase();
   if (filter === "all") return true;
+  if (filter === "emergency") {
+    return ["hospital", "clinic", "ambulance", "police", "fire_station", "shelter", "assembly_point"].includes(type);
+  }
   if (filter === "medical") return ["hospital", "clinic", "pharmacy", "ambulance"].includes(type);
   if (filter === "police") return type === "police";
   if (filter === "fire") return type === "fire_station";
@@ -142,6 +146,9 @@ export default function App() {
   const [lastSubmittedMessage, setLastSubmittedMessage] = useState("");
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
+  const [gpsCoordinates, setGpsCoordinates] = useState<Coordinates | null>(null);
+  const [manualMapLocation, setManualMapLocation] = useState<Coordinates | null>(null);
+  const [manualPinMode, setManualPinMode] = useState(false);
   const [geoDetails, setGeoDetails] = useState<{ city?: string; district?: string; state?: string }>({});
   const [offlinePackage, setOfflinePackage] = useState<OfflinePackage | null>(null);
   const [result, setResult] = useState<EmergencyResult | null>(null);
@@ -173,7 +180,7 @@ export default function App() {
   const [routeBusyFacility, setRouteBusyFacility] = useState<string | null>(null);
   const [routePath, setRoutePath] = useState<Coordinates[]>([]);
   const [routeDestination, setRouteDestination] = useState<{ coordinates: Coordinates; name: string } | null>(null);
-  const [facilityFilter, setFacilityFilter] = useState<FacilityFilter>("all");
+  const [facilityFilter, setFacilityFilter] = useState<FacilityFilter>("emergency");
   const [facilityRadiusKm, setFacilityRadiusKm] = useState(20);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [offlineExpanded, setOfflineExpanded] = useState(false);
@@ -387,7 +394,9 @@ export default function App() {
     const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
     currentGpsAvailable.current = true;
+    setGpsCoordinates(point);
     setCoordinates(point);
+    setManualMapLocation(null);
     if (refreshFacilities) void refreshNearbyFacilities(point);
     try {
       const addresses = await Location.reverseGeocodeAsync(point);
@@ -409,12 +418,65 @@ export default function App() {
   async function handleLocation() {
     setBusy(true);
     try {
-      await obtainLocation();
+      const point = await obtainLocation();
+      setManualMapLocation(null);
+      setManualPinMode(false);
+      if (mapExpanded) {
+        mapRef.current?.animateToRegion({
+          ...point,
+          latitudeDelta: 0.025,
+          longitudeDelta: 0.025,
+        }, 450);
+      }
       setStatus("Your GPS location is ready");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to read location");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function returnMapToGps() {
+    try {
+      const point = gpsCoordinates ?? await obtainLocation(false);
+      setCoordinates(point);
+      setManualMapLocation(null);
+      setManualPinMode(false);
+      mapRef.current?.animateToRegion({
+        ...point,
+        latitudeDelta: 0.025,
+        longitudeDelta: 0.025,
+      }, 450);
+      void refreshNearbyFacilities(point);
+      setStatus("Map returned to your current GPS location");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to get your GPS location");
+    }
+  }
+
+  async function selectManualMapLocation(point: Coordinates) {
+    setCoordinates(point);
+    setManualMapLocation(point);
+    setManualPinMode(false);
+    setRouteEstimate(null);
+    setRouteEstimateError("");
+    setRoutePath([]);
+    setRouteDestination(null);
+    setLocationStatus("Manual map location selected · " + point.latitude.toFixed(5) + ", " + point.longitude.toFixed(5));
+    setStatus("Searching facilities around your manually selected map pin");
+    void refreshNearbyFacilities(point);
+    try {
+      const addresses = await Location.reverseGeocodeAsync(point);
+      const address = addresses[0];
+      if (address) {
+        setGeoDetails({
+          city: address.city ?? address.subregion ?? undefined,
+          district: address.district ?? address.subregion ?? address.city ?? undefined,
+          state: address.region ?? undefined,
+        });
+      }
+    } catch {
+      // The manually selected coordinates remain valid without a street address.
     }
   }
 
@@ -827,7 +889,7 @@ export default function App() {
           <View style={styles.resultCard}>
             <View style={styles.resultTop}>
               <View>
-                <Text style={styles.resultEyebrow}>LATEST EMERGENCY RESPONSE</Text>
+                <Text style={styles.resultEyebrow}>RESPONSE SUMMARY</Text>
                 <Text style={styles.resultTitle}>{emergencyType.toUpperCase()}</Text>
               </View>
               <View style={styles.resultActions}>
@@ -907,6 +969,19 @@ export default function App() {
         {mapExpanded && coordinates ? (
           <View style={styles.mapCard}>
             <Text style={styles.sectionTitle}>Your current area</Text>
+            <View style={styles.mapControls}>
+              <Pressable onPress={returnMapToGps} style={styles.mapControlButton}>
+                <Text style={styles.mapControlText}>◎ My GPS</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setManualPinMode((active) => !active)}
+                style={[styles.mapControlButton, manualPinMode && styles.mapControlButtonSelected]}
+              >
+                <Text style={[styles.mapControlText, manualPinMode && styles.mapControlTextSelected]}>
+                  {manualPinMode ? "Tap map to place pin…" : "＋ Place pin"}
+                </Text>
+              </Pressable>
+            </View>
             <MapView
               ref={mapRef}
               style={styles.map}
@@ -918,18 +993,45 @@ export default function App() {
                 latitudeDelta: 0.025,
                 longitudeDelta: 0.025,
               }}
+              onPress={(event) => {
+                if (!manualPinMode) return;
+                const point = event.nativeEvent.coordinate;
+                void selectManualMapLocation(point);
+              }}
               onMapReady={() => {
                 if (routePath.length > 1) {
                   mapRef.current?.fitToCoordinates(routePath, {
                     edgePadding: { top: 52, right: 42, bottom: 52, left: 42 },
                     animated: true,
                   });
+                } else {
+                  mapRef.current?.animateToRegion({
+                    ...coordinates,
+                    latitudeDelta: 0.025,
+                    longitudeDelta: 0.025,
+                  }, 0);
                 }
               }}
               showsUserLocation
-              showsMyLocationButton
+              scrollEnabled
+              zoomEnabled
+              rotateEnabled
+              pitchEnabled
             >
-              <Marker coordinate={coordinates} title="Your current location" pinColor="#D13B2F" />
+              {gpsCoordinates && manualMapLocation
+                && distanceKmBetween(gpsCoordinates, manualMapLocation) > 0.02 ? (
+                  <Marker coordinate={gpsCoordinates} title="Your actual GPS position" pinColor="#668CB7" />
+                ) : null}
+              <Marker
+                coordinate={manualMapLocation ?? coordinates}
+                title={manualMapLocation ? "Selected search location" : "Your current GPS location"}
+                description={manualMapLocation ? "Drag to adjust, or use My GPS to return to your location." : "Tap Place pin to select another search location."}
+                pinColor="#D13B2F"
+                draggable={Boolean(manualMapLocation)}
+                onDragEnd={(event) => {
+                  void selectManualMapLocation(event.nativeEvent.coordinate);
+                }}
+              />
               {visibleFacilities.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number").map((item, index) => (
                 <Marker
                   key={String(item.name ?? "facility") + "-" + index}
@@ -944,9 +1046,11 @@ export default function App() {
               ) : null}
             </MapView>
             <Text style={styles.mapNote}>
-              {routeDestination
-                ? "Route preview to " + routeDestination.name + ". This is a road-network estimate, not a hazard-cleared or officially safe route."
-                : "Map points are community-mapped candidates unless marked as verified. They are not automatically designated safe zones."}
+              {manualPinMode
+                ? "Tap anywhere on the map to move the search pin. Nearby facilities will be searched around that point."
+                : routeDestination
+                  ? "Route preview to " + routeDestination.name + ". This is a road-network estimate, not a hazard-cleared or officially safe route."
+                  : "Pan and zoom freely. Use My GPS to recenter, or Place pin to search another location. Map places are unverified unless marked verified."}
             </Text>
           </View>
         ) : null}
@@ -1021,7 +1125,14 @@ export default function App() {
             {facilityLookupStatus === "idle" && facilities.length === 0 ? (
               <Text style={styles.facilityHint}>Nearby facility lookup will start when GPS is ready.</Text>
             ) : null}
-            {visibleFacilities.map((facility, index) => {
+            <ScrollView
+              style={styles.facilityResultsScroll}
+              contentContainerStyle={styles.facilityResultsContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+            >
+              {visibleFacilities.map((facility, index) => {
               const key = facilityKey(facility);
               return (
                 <View key={key + "-" + index} style={styles.facilityRow}>
@@ -1049,7 +1160,8 @@ export default function App() {
                   </Pressable>
                 </View>
               );
-            })}
+              })}
+            </ScrollView>
             {routeEstimate ? (
               <View style={styles.routePreviewCard}>
                 <Text style={styles.facilityName}>Driving route · {routeEstimate.facilityName}</Text>
@@ -1218,7 +1330,7 @@ const styles = StyleSheet.create({
   resultCard: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 19, padding: 16, gap: 11, shadowColor: "#000000", shadowOpacity: 0.20, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   resultTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   resultActions: { alignItems: "flex-end", gap: 7 },
-  resultConversation: { height: 245, maxHeight: 245, backgroundColor: "#0C0C0C", borderRadius: 12, borderWidth: 1, borderColor: "#262626" },
+  resultConversation: { height: 220, maxHeight: 220, backgroundColor: "#0C0C0C", borderRadius: 12, borderWidth: 1, borderColor: "#262626" },
   resultConversationContent: { padding: 10, gap: 9 },
   resultEyebrow: { color: "#C38F6C", fontSize: 9, fontWeight: "900", letterSpacing: 1.7 },
   resultTitle: { color: "#F7F7F7", fontSize: 25, fontWeight: "900", textTransform: "capitalize", marginTop: 3, letterSpacing: -0.6 },
@@ -1248,6 +1360,11 @@ const styles = StyleSheet.create({
   toolLabelSelected: { color: "#F7F7F7" },
   mapCard: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 19, padding: 12, gap: 9 },
   map: { width: "100%", height: 230, borderRadius: 11 },
+  mapControls: { flexDirection: "row", gap: 8 },
+  mapControlButton: { flex: 1, borderWidth: 1, borderColor: "#3A302D", backgroundColor: "#1A1A1A", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9, alignItems: "center" },
+  mapControlButtonSelected: { borderColor: "#D13B2F", backgroundColor: "#211412" },
+  mapControlText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
+  mapControlTextSelected: { color: "#F7F7F7" },
   mapNote: { color: "#C38F6C", fontSize: 9, lineHeight: 14 },
   chatThread: { backgroundColor: "#111111", borderRadius: 19, borderWidth: 1, borderColor: "#2C2C2C", padding: 14, gap: 9 },
   chatHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
@@ -1271,7 +1388,9 @@ const styles = StyleSheet.create({
   facilityFilterSelected: { backgroundColor: "#211412", borderColor: "#D13B2F" },
   facilityFilterText: { color: "#AEABA8", fontSize: 10, fontWeight: "800" },
   facilityFilterTextSelected: { color: "#F7F7F7" },
-  facilityRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderColor: "#2A2A2A", paddingTop: 10, gap: 9 },
+  facilityResultsScroll: { height: 286, maxHeight: 286, borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#2A2A2A" },
+  facilityResultsContent: { paddingBottom: 4 },
+  facilityRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderColor: "#2A2A2A", paddingVertical: 10, gap: 9 },
   facilityCopy: { flex: 1, gap: 3 },
   facilityName: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
   facilityMeta: { color: "#AEABA8", fontSize: 10, textTransform: "capitalize" },
