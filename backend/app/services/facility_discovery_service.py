@@ -4,6 +4,7 @@ Returned places are community-mapped candidates. They are never stored or
 verified automatically and must be checked against an official local source.
 """
 import asyncio
+import math
 import os
 import time
 
@@ -14,13 +15,18 @@ from app.services.geospatial_service import haversine_km
 # Public Overpass instances are best-effort and can be overloaded. Prefer a
 # separate operator, then fail over instead of treating one HTTP 502 as no data.
 _configured_overpass_url = os.getenv("OVERPASS_URL", "").strip()
-OVERPASS_URLS = tuple(dict.fromkeys(url for url in (
+# overpass.osm.ch is a Switzerland-only regional replica; it returns a
+# successful empty result for Indian coordinates, so never use it in India.
+_candidates = (
     _configured_overpass_url,
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.osm.ch/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-) if url))
+)
+OVERPASS_URLS = tuple(dict.fromkeys(
+    url for url in _candidates
+    if url and "overpass.osm.ch" not in url.lower()
+))
 CACHE_SECONDS = 600
 EMPTY_CACHE_SECONDS = 20
 _CACHE = {}
@@ -47,8 +53,10 @@ def _facility_type(tags):
         "college": "education",
         "university": "education",
         "community_centre": "community_center",
+        "social_facility": "community_center",
         "healthcare": "clinic",
         "rescue_station": "other",
+        "first_aid": "other",
     }
     if amenity in amenity_types:
         return amenity_types[amenity]
@@ -78,8 +86,16 @@ def _facility_type(tags):
     if healthcare in healthcare_types:
         return healthcare_types[healthcare]
 
-    if building in {"school", "college", "university"}:
-        return "education"
+    building_types = {
+        "school": "education",
+        "college": "education",
+        "university": "education",
+        "hospital": "hospital",
+        "clinic": "clinic",
+        "healthcare": "clinic",
+    }
+    if building in building_types:
+        return building_types[building]
     return None
 
 
@@ -182,16 +198,27 @@ async def discover_facilities(latitude, longitude, radius_km=5):
             return {**cached["result"], "cache_status": "cached"}
 
     radius_m = int(radius_km * 1000)
+    # A bounding-box query is cheaper for Overpass than several large
+    # around() scans. normalize_overpass_elements applies the exact circular
+    # haversine radius afterward, so corner features are not shown.
+    latitude_delta = radius_m / 111_320
+    longitude_delta = radius_m / (111_320 * max(0.01, math.cos(math.radians(latitude))))
+    south = max(-90.0, latitude - latitude_delta)
+    north = min(90.0, latitude + latitude_delta)
+    west = max(-180.0, longitude - longitude_delta)
+    east = min(180.0, longitude + longitude_delta)
+    bbox = f"{south:.6f},{west:.6f},{north:.6f},{east:.6f}"
+
     # Search all nearby emergency/public-service and community facilities,
     # not only the facility types suggested for the currently reported hazard.
-    # Schools/colleges are shown as community places, never as verified shelters.
+    # Schools/colleges are community places, never verified shelters.
     query = f"""
-[out:json][timeout:25];
+[out:json][timeout:60];
 (
-  nwr(around:{radius_m},{latitude},{longitude})["amenity"~"^(hospital|police|fire_station|shelter|ambulance_station|clinic|doctors|pharmacy|school|college|university|community_centre|healthcare|rescue_station)$"];
-  nwr(around:{radius_m},{latitude},{longitude})["emergency"~"^(ambulance_station|fire_service|assembly_point|shelter|rescue)$"];
-  nwr(around:{radius_m},{latitude},{longitude})["healthcare"~"^(hospital|clinic|doctor|pharmacy|dentist|physiotherapist|centre|healthcare|blood_bank|birthing_centre)$"];
-  nwr(around:{radius_m},{latitude},{longitude})["building"~"^(school|college|university)$"];
+  nwr["amenity"~"^(hospital|police|fire_station|shelter|ambulance_station|clinic|doctors|pharmacy|school|college|university|community_centre|social_facility|healthcare|rescue_station|first_aid)$"]({bbox});
+  nwr["emergency"~"^(ambulance_station|fire_service|assembly_point|shelter|rescue)$"]({bbox});
+  nwr["healthcare"]({bbox});
+  nwr["building"~"^(hospital|clinic|healthcare|school|college|university)$"]({bbox});
 );
 out center tags;
 """.strip()
@@ -229,8 +256,15 @@ out center tags;
                     )
                     response.raise_for_status()
                     candidate_data = response.json()
-                    if not isinstance(candidate_data, dict) or not isinstance(candidate_data.get("elements"), list):
+                            if not isinstance(candidate_data, dict) or not isinstance(candidate_data.get("elements"), list):
                         raise ValueError("Unexpected Overpass response shape.")
+                    # Overpass can return HTTP 200 with an empty elements array
+                    # and a JSON "remark" describing a timeout/runtime failure.
+                    # Treat that as a failed query and try the next global server.
+                    remark = candidate_data.get("remark")
+                    if isinstance(remark, str) and remark.strip():
+                        failures.append(f"{endpoint}: {remark.strip()[:180]}")
+                        continue
                     if candidate_data["elements"]:
                         data = candidate_data
                         successful_endpoint = endpoint
@@ -261,6 +295,7 @@ out center tags;
             "raw_element_count": len(elements),
             "excluded_element_count": max(0, len(elements) - len(items)),
             "provider_endpoint": successful_endpoint,
+            "osm_data_timestamp": (data.get("osm3s") or {}).get("timestamp_osm_base"),
             "note": (
                 "Includes hospitals, clinics, healthcare centres, pharmacies, police, fire stations, "
                 "ambulance and rescue services, shelters and nearby schools/colleges/universities. "
