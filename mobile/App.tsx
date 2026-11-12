@@ -57,8 +57,11 @@ const FACILITY_RADIUS_OPTIONS = [5, 10, 20] as const;
 function matchesFacilityFilter(facility: NearbyFacility, filter: FacilityFilter) {
   const type = String(facility.facility_type ?? "").toLowerCase();
   if (filter === "all") return true;
+  if (filter !== "all" && facility.verification_status !== "verified" && facility.has_map_name === false) {
+    return false;
+  }
   if (filter === "emergency") {
-    return ["hospital", "clinic", "ambulance", "police", "fire_station", "shelter", "assembly_point"].includes(type);
+    return ["hospital", "police", "fire_station", "ambulance"].includes(type);
   }
   if (filter === "medical") return ["hospital", "clinic", "pharmacy", "ambulance"].includes(type);
   if (filter === "police") return type === "police";
@@ -181,7 +184,7 @@ export default function App() {
   const [routePath, setRoutePath] = useState<Coordinates[]>([]);
   const [routeDestination, setRouteDestination] = useState<{ coordinates: Coordinates; name: string } | null>(null);
   const [facilityFilter, setFacilityFilter] = useState<FacilityFilter>("emergency");
-  const [facilityRadiusKm, setFacilityRadiusKm] = useState(20);
+  const [facilityRadiusKm, setFacilityRadiusKm] = useState(10);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [offlineExpanded, setOfflineExpanded] = useState(false);
   const facilityRequestSequence = useRef(0);
@@ -766,8 +769,17 @@ export default function App() {
           : packageFacilities;
   const filteredFacilities = facilities
     .filter((facility) => matchesFacilityFilter(facility, facilityFilter))
-    .filter((facility) => typeof facility.distance_km !== "number" || facility.distance_km <= facilityRadiusKm)
-    .sort((a, b) => (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY));
+    .filter((facility) => {
+      const meters = typeof facility.distance_meters === "number"
+        ? facility.distance_meters
+        : typeof facility.distance_km === "number" ? facility.distance_km * 1000 : null;
+      return meters === null || meters <= facilityRadiusKm * 1000;
+    })
+    .sort((a, b) => {
+      const distanceA = a.distance_meters ?? (a.distance_km != null ? a.distance_km * 1000 : Number.POSITIVE_INFINITY);
+      const distanceB = b.distance_meters ?? (b.distance_km != null ? b.distance_km * 1000 : Number.POSITIVE_INFINITY);
+      return distanceA - distanceB;
+    });
   const visibleFacilities = filteredFacilities.slice(0, 12);
 
   if (!permissionsReady) {
@@ -1090,8 +1102,9 @@ export default function App() {
               ))}
             </View>
             <Text style={styles.facilityMeta}>
-              Showing {visibleFacilities.length} closest of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
+              Nearest first · Showing {visibleFacilities.length} of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
             </Text>
+            <Text style={styles.facilityHint}>Distances are straight-line from the selected search point, not road-driving distances. Road distance appears only when a route is successfully calculated.</Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
                 <ActivityIndicator color="#D13B2F" />
@@ -1141,7 +1154,13 @@ export default function App() {
                     <Text style={styles.facilityName}>{facility.name ?? "Emergency facility"}</Text>
                     <Text style={styles.facilityMeta}>
                       {(facility.facility_type ?? "facility").replaceAll("_", " ")}
-                      {typeof facility.distance_km === "number" ? " · " + facility.distance_km.toFixed(1) + " km" : ""}
+                      {typeof facility.distance_meters === "number"
+                        ? " · " + (facility.distance_meters < 1000
+                          ? facility.distance_meters + " m"
+                          : (facility.distance_meters / 1000).toFixed(2) + " km") + " straight-line"
+                        : typeof facility.distance_km === "number"
+                          ? " · " + facility.distance_km.toFixed(2) + " km straight-line"
+                          : ""}
                     </Text>
                     <Text style={facility.verification_status === "verified" ? styles.verifiedText : styles.unverifiedText}>
                       {facility.verification_status === "verified"
