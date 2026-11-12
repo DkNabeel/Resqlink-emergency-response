@@ -27,7 +27,6 @@ import {
   cacheNearbyFacilities,
   getCachedNearbyFacilities,
   getDrivingRoute,
-  downloadOfflinePackage,
   type EmergencyResult,
   type NearbyFacility,
   type OfflinePackage,
@@ -186,7 +185,6 @@ export default function App() {
   const [facilityFilter, setFacilityFilter] = useState<FacilityFilter>("emergency");
   const [facilityRadiusKm, setFacilityRadiusKm] = useState(10);
   const [mapExpanded, setMapExpanded] = useState(false);
-  const [offlineExpanded, setOfflineExpanded] = useState(false);
   const facilityRequestSequence = useRef(0);
   const currentGpsAvailable = useRef(false);
   const mapRef = useRef<MapView | null>(null);
@@ -221,21 +219,13 @@ export default function App() {
       const osmCount = found.osm_candidate_count ?? items.filter((item) => item.verification_status !== "verified").length;
       const osmError = typeof found.osm_error === "string" ? found.osm_error : "";
       setFacilityLookupInfo(
-        `Received ${items.length} facilities · ${verifiedCount} verified project records · ${osmCount} OpenStreetMap candidates`
-        + (rawCount !== null ? ` · ${rawCount} raw map objects` : "")
-        + (found.osm_status === "unavailable"
-          ? " · OpenStreetMap query failed" + (osmError ? ": " + osmError.slice(0, 150) : "")
-          : rawCount === 0 ? " · Overpass returned no mapped objects for this query" : "")
-        + (found.provider_endpoint ? ` · ${found.provider_endpoint.replace("https://", "").replace("http://", "")}` : "")
-        + (found.road_distance_status === "available"
-          ? ` · HeiGIT road distances calculated for ${found.road_distance_available_count ?? 0} facilities`
-          : found.road_distance_status === "partial"
-            ? ` · HeiGIT road distances calculated for ${found.road_distance_available_count ?? 0} of ${items.length} facilities; the rest are not routed to limit API use`
-            : found.road_distance_status === "not_configured"
-              ? " · Road distances unavailable: configure the HeiGIT API key"
-              : found.road_distance_status === "unavailable"
-                ? " · HeiGIT road distances unavailable" + (found.road_distance_error ? ": " + found.road_distance_error.slice(0, 150) : "")
-                : ""),
+        found.road_distance_status === "not_configured"
+          ? "Road routing needs a HeiGIT key or the local offline routing engine."
+          : found.road_distance_status === "unavailable"
+            ? "Road distance service unavailable: " + (found.road_distance_error ?? "check routing configuration")
+            : found.osm_status === "unavailable"
+              ? "Nearby map search unavailable: " + (osmError || "Overpass is temporarily unavailable")
+              : "",
       );
       const saved = await cacheNearbyFacilities(items, point, radiusKm).catch(() => null);
       const savedMatchesArea = Boolean(
@@ -492,38 +482,6 @@ export default function App() {
     }
   }
 
-  async function handlePackageDownload() {
-    setBusy(true);
-    try {
-      // Package generation also retrieves the area's facility snapshot, so
-      // avoid starting a second independent discovery request for this GPS fix.
-      const point = coordinates ?? await obtainLocation(false);
-      const response = await downloadOfflinePackage(point, language);
-      setOfflinePackage(response.payload);
-      const packageFacilities = [
-        ...(response.payload.nearby_verified_facilities ?? []),
-        ...(response.payload.nearby_discovered_facilities ?? []),
-      ];
-      setNearbyFacilities(packageFacilities);
-      setFacilityLookupStatus(packageFacilities.length > 0 ? "available" : "empty");
-      setFacilityLookupInfo(
-        "Offline package snapshot · " + packageFacilities.length + " nearby facility record(s)",
-      );
-      setStatus(response.cacheStatus === "not_modified"
-        ? "Offline pack is already up to date"
-        : "Emergency safety pack saved to this device");
-    } catch (error) {
-      const cached = await getLatestOfflinePackage().catch(() => null);
-      if (cached) {
-        setOfflinePackage(cached.payload);
-        setStatus("Network unavailable · showing saved pack from " + cached.storedAt);
-      } else {
-        setStatus(error instanceof Error ? error.message : "Offline pack download failed");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function handleEmergency() {
     const submittedMessage = message.trim();
@@ -986,13 +944,6 @@ export default function App() {
             <Text style={styles.toolEmoji}>☀️</Text>
             <Text style={styles.toolLabel}>Weather</Text>
           </Pressable>
-          <Pressable
-            onPress={() => setOfflineExpanded((value) => !value)}
-            style={[styles.toolButton, offlineExpanded && styles.toolButtonSelected]}
-          >
-            <Text style={styles.toolEmoji}>◈</Text>
-            <Text style={[styles.toolLabel, offlineExpanded && styles.toolLabelSelected]}>Offline pack</Text>
-          </Pressable>
         </View>
 
         {mapExpanded && coordinates ? (
@@ -1088,7 +1039,7 @@ export default function App() {
           <View style={styles.facilityCard}>
             <Text style={styles.sectionTitle}>Nearby emergency facilities</Text>
             <Text style={styles.facilityHint}>
-              Search public-service candidates around {manualMapLocation ? "your selected map pin" : "your GPS location"}. Community-mapped places are unverified and must not be treated as confirmed safe zones.
+              Around {manualMapLocation ? "selected pin" : "your GPS"} · Community map candidates are unverified.
             </Text>
             <View style={styles.facilityRadiusSection}>
               <Text style={styles.facilityMeta}>Search radius</Text>
@@ -1107,7 +1058,11 @@ export default function App() {
                 ))}
               </View>
             </View>
-            <View style={styles.facilityFilterRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.facilityFilterScroller}
+            >
               {FACILITY_FILTERS.map((filter) => (
                 <Pressable
                   key={filter.value}
@@ -1117,18 +1072,18 @@ export default function App() {
                   <Text style={[styles.facilityFilterText, facilityFilter === filter.value && styles.facilityFilterTextSelected]}>{filter.label}</Text>
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>     </View>
             <Text style={styles.facilityMeta}>
               {drivingDistanceCount > 0 ? "Nearest by driving distance" : "Nearby candidates"} · Showing {visibleFacilities.length} of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
             </Text>
-            <Text style={styles.facilityHint}>Displayed distances are road-network driving estimates from HeiGIT. Estimated times do not include live traffic. The search radius only defines which nearby map candidates are checked.</Text>
+            <Text style={styles.facilityHint}>Road distance · estimated drive time · no live traffic</Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
                 <ActivityIndicator color="#D13B2F" />
-                <Text style={styles.facilityMeta}>Finding nearby hospitals, shelters, fire and police services...</Text>
+                <Text style={styles.facilityMeta}>Updating nearby facilities...</Text>
               </View>
             ) : null}
-            {facilityLookupInfo ? <Text style={styles.facilityMeta}>{facilityLookupInfo}</Text> : null}
+            {facilityLookupInfo ? <Text style={styles.diagnosticWarning}>{facilityLookupInfo}</Text> : null}
             {facilityLookupStatus === "error" ? (
               <Text style={styles.diagnosticWarning}>
                 Live facility search failed: {facilityLookupError}
@@ -1147,9 +1102,7 @@ export default function App() {
             ) : null}
             {nearbyFacilities.length === 0 && cachedNearbyFacilities.length > 0 ? (
               <Text style={styles.facilityHint}>
-                Showing {cachedNearbyFacilities.length} previously saved nearby candidates
-                {cachedNearbyFacilitiesAt ? " · saved " + new Date(cachedNearbyFacilitiesAt).toLocaleString() : ""}.
-                These are cached map records and may have changed.
+                Showing saved candidates · last refreshed {cachedNearbyFacilitiesAt ? new Date(cachedNearbyFacilitiesAt).toLocaleString() : "earlier"}.
               </Text>
             ) : null}
             {facilityLookupStatus === "idle" && facilities.length === 0 ? (
@@ -1226,30 +1179,6 @@ export default function App() {
               <Text style={styles.recheckText}>Search this area again</Text>
             </Pressable>
           </View>
-        ) : null}
-
-        {offlineExpanded ? (
-        <View style={styles.offlineCard}>
-          <View style={styles.offlineHeader}>
-            <View style={styles.offlineIcon}><Text style={styles.offlineIconText}>◈</Text></View>
-            <View style={styles.offlineCopy}>
-              <Text style={styles.offlineTitle}>{copy.offline}</Text>
-              <Text style={styles.offlineSub}>Save essential guidance and 112 on this device</Text>
-            </View>
-          </View>
-          <Pressable onPress={handlePackageDownload} disabled={busy} style={styles.offlineButton}>
-            <Text style={styles.offlineButtonText}>{copy.saveOffline}</Text>
-            <Text style={styles.offlineButtonArrow}>↓</Text>
-          </Pressable>
-          <Text style={styles.offlineStatus}>{offlinePackage ? "Saved · " + new Date(offlinePackage.generated_at).toLocaleString() : "No saved package yet"}</Text>
-          <Text style={styles.offlineStatus}>
-            Nearby facilities saved: {Math.max(
-              cachedNearbyFacilities.length,
-              (offlinePackage?.nearby_verified_facilities?.length ?? 0) + (offlinePackage?.nearby_discovered_facilities?.length ?? 0)
-            )} · separate on-device facility cache
-          </Text>
-          <Text style={styles.offlineWarning}>Offline mode uses cached emergency facilities and guidance. Full offline map tiles and road-by-road routing are not included yet.</Text>
-        </View>
         ) : null}
 
         <View style={styles.footer}>
@@ -1421,17 +1350,18 @@ const styles = StyleSheet.create({
   chatUserText: { color: "#F7F7F7" },
   chatAssistantText: { color: "#F7F7F7" },
   followUp: { color: "#F7F7F7", backgroundColor: "#1B1716", borderWidth: 1, borderColor: "#5B3733", padding: 12, borderRadius: 12, fontSize: 12, lineHeight: 18, overflow: "hidden" },
-  facilityCard: { backgroundColor: "#111111", borderRadius: 15, borderWidth: 1, borderColor: "#2C2C2C", padding: 13, gap: 10 },
+  facilityCard: { backgroundColor: "#111111", borderRadius: 13, borderWidth: 1, borderColor: "#2C2C2C", padding: 9, gap: 6 },
   facilityHint: { color: "#AEABA8", fontSize: 10, lineHeight: 15 },
   facilityRadiusSection: { gap: 6 },
   facilityFilterRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  facilityFilter: { backgroundColor: "#171717", borderWidth: 1, borderColor: "#303030", borderRadius: 18, paddingHorizontal: 11, paddingVertical: 7 },
+  facilityFilterScroller: { flexDirection: "row", alignItems: "center", gap: 6 },
+  facilityFilter: { backgroundColor: "#171717", borderWidth: 1, borderColor: "#303030", borderRadius: 18, paddingHorizontal: 9, paddingVertical: 6 },
   facilityFilterSelected: { backgroundColor: "#211412", borderColor: "#D13B2F" },
   facilityFilterText: { color: "#AEABA8", fontSize: 10, fontWeight: "800" },
   facilityFilterTextSelected: { color: "#F7F7F7" },
-  facilityResultsScroll: { height: 286, maxHeight: 286, borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#2A2A2A" },
+  facilityResultsScroll: { height: 205, maxHeight: 205, borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#2A2A2A" },
   facilityResultsContent: { paddingBottom: 4 },
-  facilityRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderColor: "#2A2A2A", paddingVertical: 10, gap: 9 },
+  facilityRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderColor: "#2A2A2A", paddingVertical: 7, gap: 8 },
   facilityCopy: { flex: 1, gap: 3 },
   facilityName: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
   facilityMeta: { color: "#AEABA8", fontSize: 10, textTransform: "capitalize" },
@@ -1461,17 +1391,6 @@ const styles = StyleSheet.create({
   weatherDisclaimer: { color: "#AEABA8", fontSize: 9, lineHeight: 14 },
   weatherDone: { backgroundColor: "#D13B2F", borderRadius: 10, padding: 12, alignItems: "center" },
   weatherDoneText: { color: "#F7F7F7", fontSize: 12, fontWeight: "900" },
-  offlineCard: { backgroundColor: "#111111", borderRadius: 19, padding: 14, gap: 10, borderWidth: 1, borderColor: "#2C2C2C" },
-  offlineHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
-  offlineIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: "#211412", alignItems: "center", justifyContent: "center" },
-  offlineIconText: { color: "#C38F6C", fontSize: 22 },
-  offlineCopy: { flex: 1, gap: 3 },
-  offlineTitle: { color: "#F7F7F7", fontWeight: "900", fontSize: 13 },
-  offlineSub: { color: "#AEABA8", fontSize: 10 },
-  offlineButton: { backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#3A302D", borderRadius: 10, padding: 12, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 },
-  offlineButtonText: { color: "#F7F7F7", fontSize: 11, fontWeight: "900" },
-  offlineButtonArrow: { color: "#D13B2F", fontSize: 16, fontWeight: "900" },
-  offlineStatus: { color: "#AEABA8", fontSize: 10 },
   offlineWarning: { color: "#C38F6C", fontSize: 9, lineHeight: 14 },
   footer: { paddingTop: 3, gap: 5, alignItems: "center" },
   footerStatus: { color: "#F7F7F7", fontSize: 11, fontWeight: "800" },
