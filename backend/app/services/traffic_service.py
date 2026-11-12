@@ -35,6 +35,11 @@ class TrafficServiceError(RuntimeError):
     pass
 
 
+def _round_positive(value):
+    """Round non-negative metres/seconds conventionally, avoiding bankers' rounding."""
+    return int(math.floor(float(value) + 0.5))
+
+
 def _provider_error_message(response):
     """Extract a safe, concise provider error without exposing request headers."""
     message = ""
@@ -101,9 +106,9 @@ def normalize_route_response(payload):
         "travel_mode": "DRIVE",
         "routing_preference": "recommended",
         "live_traffic_available": False,
-        "estimated_travel_time_seconds": round(duration),
+        "estimated_travel_time_seconds": _round_positive(duration),
         "estimated_travel_time_minutes": round(duration / 60, 1),
-        "distance_meters": round(distance),
+        "distance_meters": _round_positive(distance),
         "distance_km": round(distance / 1000, 2),
         "encoded_polyline": encoded_polyline,
         "route_geometry": route_geometry,
@@ -270,9 +275,9 @@ def normalize_matrix_response(payload, expected_destinations):
             continue
 
         normalized.append({
-            "road_distance_meters": round(distance),
+            "road_distance_meters": _round_positive(distance),
             "road_distance_km": round(distance / 1000, 2),
-            "road_duration_seconds": round(duration),
+            "road_duration_seconds": _round_positive(duration),
             "road_duration_minutes": round(duration / 60, 1),
             "road_route_status": "available",
         })
@@ -643,12 +648,21 @@ async def get_local_osrm_matrix(origin_latitude, origin_longitude, destinations)
         raise TrafficNotConfigured(
             "OFFLINE_ROUTING_URL is not configured; local offline routing is disabled."
         )
+    try:
+        origin_latitude = float(origin_latitude)
+        origin_longitude = float(origin_longitude)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Origin coordinates must be numbers.") from exc
+    if not (-90 <= origin_latitude <= 90 and -180 <= origin_longitude <= 180):
+        raise ValueError("Origin coordinates are outside valid latitude/longitude ranges.")
     if len(destinations) > MATRIX_MAX_DESTINATIONS:
         raise ValueError(
             f"At most {MATRIX_MAX_DESTINATIONS} destinations can be routed in one matrix request."
         )
 
     parsed = [(float(lat), float(lon)) for lat, lon in destinations]
+    if any(not (-90 <= lat <= 90 and -180 <= lon <= 180) for lat, lon in parsed):
+        raise ValueError("Destination coordinates are outside valid latitude/longitude ranges.")
     if not parsed:
         return {
             "items": [],
@@ -738,6 +752,20 @@ async def get_traffic_route(
     destination_latitude,
     destination_longitude,
 ):
+    try:
+        origin_latitude, origin_longitude, destination_latitude, destination_longitude = (
+            float(origin_latitude),
+            float(origin_longitude),
+            float(destination_latitude),
+            float(destination_longitude),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("All route coordinates must be numbers.") from exc
+    if not (-90 <= origin_latitude <= 90 and -90 <= destination_latitude <= 90):
+        raise ValueError("Latitude must be between -90 and 90.")
+    if not (-180 <= origin_longitude <= 180 and -180 <= destination_longitude <= 180):
+        raise ValueError("Longitude must be between -180 and 180.")
+
     local_error = None
     if _local_osrm_url() and _prefer_local_routing():
         try:
