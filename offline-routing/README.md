@@ -2,30 +2,36 @@
 
 ResQLink can calculate road distance, estimated drive time and route geometry without internet by running OSRM locally on the laptop. The phone continues to call the FastAPI backend over the phone hotspot/local Wi-Fi; FastAPI calls OSRM at http://127.0.0.1:5000. No HeiGIT request is needed when local routing is preferred.
 
-## 1. Download only the area you need
+## 1. One-command automatic map download and setup
 
-1. Open the [BBBike custom OSM extract service](https://extract.bbbike.org/).
-2. Move the map to your service area, select **Create**, and resize the box or make a polygon.
-3. Include the entire area in which ResQLink must find facilities and routes, with a buffer around the outer edge. If you search facilities out to 20 km, do not make the extract only a 20 km circle; roads should extend beyond the edge so routes can reach facilities near that boundary.
-4. Choose **PBF** as the format, give the extract a name, and submit it. BBBike sends a download link when the custom extract is ready. Its help page says extracts are refreshed daily and that "nobody" can be entered instead of an email; the generated extract can then be found on its status page.
-5. Download the .osm.pbf file to your laptop.
-
-Use a regional/custom extract rather than the full India extract. A larger extract covers more places but takes more storage, memory and preprocessing time.
-
-## 2. Build the local driving graph
+You do **not** need to visit BBBike, draw an extract, or manually download a PBF.
 
 Requirements:
 - Docker Desktop installed and running.
-- Enough free disk space for the source PBF and generated OSRM graph files. Keep the data folder on an SSD.
-- A custom .osm.pbf extract from step 1.
+- Internet for the first setup only.
+- Enough free disk space for the regional map extract and generated OSRM graph.
 
 Open PowerShell at the repository root and run:
 
 ~~~powershell
-.\offline-routing\setup-osrm.ps1 -PbfPath "C:\Users\YOUR_USER\Downloads\your-area.osm.pbf"
+.\offline-routing\setup-osrm.ps1
 ~~~
 
-The script copies the extract into offline-routing/data/, downloads the official OSRM container image, builds the car-routing graph, partitions/customizes it with OSRM's recommended MLD pipeline, and starts a local service on port 5000.
+The script automatically:
+1. Downloads the latest Southern Zone India OpenStreetMap PBF from Geofabrik (roughly 560 MB in the current listing).
+2. Downloads the official MD5 checksum and verifies the map file.
+3. Resumes a partial download if the connection is interrupted and the command is run again.
+4. Downloads the OSRM Docker image.
+5. Builds and starts the local driving-road graph.
+6. Writes `OFFLINE_ROUTING_URL` and `ROUTING_PREFER_LOCAL=true` into `backend/.env`, preserving all existing API keys.
+
+The Southern Zone extract is a broad regional dataset, not a small GPS-centred download. It avoids downloading the full India extract, which is currently listed at roughly 1.6 GB. If you already have a custom PBF, you can still pass it explicitly:
+
+~~~powershell
+.\offline-routing\setup-osrm.ps1 -PbfPath "C:\Maps\your-area.osm.pbf"
+~~~
+
+Use `-Rebuild` only when you deliberately need to regenerate the processed graph. The downloaded PBF and generated graph remain in `offline-routing/data/` and are ignored by Git.
 
 The first graph build can take a while depending on the size of your extract. Do not interrupt it. Generated map/graph files are ignored by Git and are not uploaded to the repository.
 
@@ -39,12 +45,7 @@ Test-NetConnection 127.0.0.1 -Port 5000
 
 ## 3. Enable local-first routing in FastAPI
 
-Add these settings to backend/.env:
-
-~~~env
-OFFLINE_ROUTING_URL=http://127.0.0.1:5000
-ROUTING_PREFER_LOCAL=true
-~~~
+The setup script writes these settings into backend/.env automatically. Check that they are present if you already had an older setup.
 
 Restart FastAPI:
 
