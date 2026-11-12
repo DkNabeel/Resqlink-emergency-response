@@ -2,7 +2,7 @@
 
 ResQLink is a mobile emergency-response project. This repository currently contains the FastAPI backend, SQLite persistence, multilingual rule-based emergency intent handling, NDMA SACHET alert ingestion, geospatial matching, facility management and an on-demand weather forecast adapter.
 
-**Implementation:** The emergency endpoint uses optional Groq AI intent classification when configured, with deterministic multilingual keyword detection as a fallback. Safety instructions remain curated local guidance. The Expo React Native client is in mobile/. It includes foreground GPS, emergency submission and a SQLite-backed cache. Optional local OSRM routing can calculate road distance, ETA and route geometry offline when a regional OSM extract has been prepared on the laptop. Full offline map tiles and push notification delivery are not implemented.
+**Implementation:** The emergency endpoint uses optional Groq AI intent classification when configured, with deterministic multilingual keyword detection as a fallback. Safety instructions remain curated local guidance. The Expo React Native client is in mobile/. It includes foreground GPS, emergency submission, nearby facility discovery and a SQLite-backed cache. Facility distances are approximate straight-line distances; facility buttons open Google Maps for external driving directions. Custom in-app online/offline routing, offline map tiles and push notification delivery are not implemented.
 
 ## Backend setup
 
@@ -32,7 +32,6 @@ The repository includes a `render.yaml` Blueprint for deploying the existing Fas
 3. Review the `resqlink-api` service and select the **Free** plan.
 4. Before or after the first deploy, open the service's **Environment** settings and add:
    - `GROQ_API_KEY` (required for Groq classification)
-   - `OPENROUTESERVICE_API_KEY` (optional driving ETA)
    - `FACILITY_ADMIN_TOKEN` (optional facility-verification protection)
 5. Deploy and wait for the service to become **Live**.
 6. Test `https://YOUR-SERVICE.onrender.com/health` and `/system/status`.
@@ -62,7 +61,7 @@ Restart Expo after changing the mobile environment file.
 | DELETE | /facilities/{facility_id} | Delete a facility |
 | POST | /facilities/{facility_id}/verification | Verify/unverify a facility with admin token |
 | GET | /facilities/nearby | Search facilities by straight-line distance |
-| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |\n| POST | /routes/traffic | Road-based driving ETA via OpenRouteService (no live traffic) |\n| GET | /facilities/discover | Find nearby OpenStreetMap facility candidates (unverified) |
+| GET | /weather/nearby | Current model conditions and hourly forecast from Open-Meteo |\n| GET | /facilities/discover | Find nearby OpenStreetMap facility candidates (unverified) |
 | GET | /offline/package | Download language-specific guides, 112, nearby verified facilities and location-matched alert snapshot; supports ETag/304 conditional refresh |
 
 ## Emergency request example
@@ -129,7 +128,7 @@ The backend retrieves RSS and linked CAP detail documents and stores sender, eve
 - IP geolocation is approximate and disabled by default.
 - A saved GPS position may become stale and must be checked using its recorded timestamp.
 - `/offline/package` returns a location-scoped data snapshot and supports `ETag` / `If-None-Match` so a mobile client can skip downloading an unchanged package. The mobile app must store and use the last successful response locally; the backend cannot retrieve live government feeds when the phone has no network. A `304 Not Modified` response means the client should retain its previously saved package.
-- A road-based driving ETA is available at POST /routes/traffic when OPENROUTESERVICE_API_KEY is configured. It uses OpenRouteService (HeiGIT) road data and does not include live traffic or congestion.\n- GET /facilities/discover searches OpenStreetMap community-mapped candidates. Results are never stored or verified automatically; confirm them from current official records before relying on them.
+- The mobile facility finder shows approximate straight-line distances. Google Maps calculates external driving directions when the user taps a facility button.\n- GET /facilities/discover searches OpenStreetMap community-mapped candidates. Results are never stored or verified automatically; confirm them from current official records before relying on them.
 - Push notification delivery is not guaranteed and must not replace official warning channels.
 
 ## Tests
@@ -151,13 +150,12 @@ See .env.example. Important settings:
 - IP_GEOLOCATION_ENABLED and IP_GEOLOCATION_URL_TEMPLATE
 - FACILITY_ADMIN_TOKEN (protects facility verification endpoint)
 - WEATHER_CACHE_TTL_SECONDS
-- OPENROUTESERVICE_API_KEY (optional driving-route provider)
 - LOG_LEVEL
 
 
-## Driving routes
+## Driving directions
 
-POST /routes/traffic calculates driving distance, estimated duration and route geometry. It uses HeiGIT/OpenRouteService when configured, and it can use a local OSRM graph as its primary or fallback router. Hosted requests require OPENROUTESERVICE_API_KEY; local offline routing requires OFFLINE_ROUTING_URL. Keep all credentials on the backend. Road estimates do not include live traffic. Run `offline-routing/setup-osrm.ps1` once from PowerShell to automatically download and verify the Southern India OSM extract, build the local OSRM graph, and configure local-first routing. See [offline-routing/README.md](offline-routing/README.md) for setup and offline testing.
+The current submission build does not calculate road routes inside ResQLink. Facility rows show approximate Haversine straight-line distance, while the Google Maps button opens external turn-by-turn driving directions. Custom online and offline route algorithms are deferred for the next development phase; Docker is not required for the current demo.
 
 ## Nearby facility discovery
 
@@ -166,4 +164,4 @@ GET /facilities/discover?latitude=12.97&longitude=77.59&radius_km=5 queries the 
 
 ## Mobile application
 
-See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. Set EXPO_PUBLIC_API_BASE_URL to the backend's laptop LAN address; the phone and laptop must be on the same Wi-Fi for local development. The client does not include offline visual map tiles or push notification delivery; offline road routing is hosted locally by OSRM on the laptop.
+See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. Set EXPO_PUBLIC_API_BASE_URL to the backend's laptop LAN address; the phone and laptop must be on the same Wi-Fi for local development. The client does not include offline visual map tiles, custom offline road routing or push notification delivery. Google Maps directions require internet connectivity.
