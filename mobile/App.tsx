@@ -764,11 +764,11 @@ export default function App() {
         : resultFacilities.length > 0
           ? resultFacilities
           : packageFacilities;
-  const visibleFacilities = facilities
+  const filteredFacilities = facilities
     .filter((facility) => matchesFacilityFilter(facility, facilityFilter))
     .filter((facility) => typeof facility.distance_km !== "number" || facility.distance_km <= facilityRadiusKm)
-    .sort((a, b) => (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY))
-    .slice(0, 12);
+    .sort((a, b) => (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY));
+  const visibleFacilities = filteredFacilities.slice(0, 12);
 
   if (!permissionsReady) {
     return (
@@ -1090,7 +1090,7 @@ export default function App() {
               ))}
             </View>
             <Text style={styles.facilityMeta}>
-              Showing {visibleFacilities.length} of {facilities.length} saved/live candidates within {facilityRadiusKm} km
+              Showing {visibleFacilities.length} closest of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
             </Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
