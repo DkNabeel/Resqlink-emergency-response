@@ -57,7 +57,7 @@ const FACILITY_RADIUS_OPTIONS = [5, 10, 20] as const;
 function matchesFacilityFilter(facility: NearbyFacility, filter: FacilityFilter) {
   const type = String(facility.facility_type ?? "").toLowerCase();
   if (filter === "all") return true;
-  if (filter !== "all" && facility.verification_status !== "verified" && facility.has_map_name === false) {
+  if (facility.verification_status !== "verified" && facility.has_map_name === false) {
     return false;
   }
   if (filter === "emergency") {
