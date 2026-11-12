@@ -226,7 +226,16 @@ export default function App() {
         + (found.osm_status === "unavailable"
           ? " · OpenStreetMap query failed" + (osmError ? ": " + osmError.slice(0, 150) : "")
           : rawCount === 0 ? " · Overpass returned no mapped objects for this query" : "")
-        + (found.provider_endpoint ? ` · ${found.provider_endpoint.replace("https://", "").replace("http://", "")}` : ""),
+        + (found.provider_endpoint ? ` · ${found.provider_endpoint.replace("https://", "").replace("http://", "")}` : "")
+        + (found.road_distance_status === "available"
+          ? ` · HeiGIT road distances calculated for ${found.road_distance_available_count ?? 0} facilities`
+          : found.road_distance_status === "partial"
+            ? ` · HeiGIT road distances calculated for ${found.road_distance_available_count ?? 0} of ${items.length} facilities; the rest are not routed to limit API use`
+            : found.road_distance_status === "not_configured"
+              ? " · Road distances unavailable: configure the HeiGIT API key"
+              : found.road_distance_status === "unavailable"
+                ? " · HeiGIT road distances unavailable" + (found.road_distance_error ? ": " + found.road_distance_error.slice(0, 150) : "")
+                : ""),
       );
       const saved = await cacheNearbyFacilities(items, point, radiusKm).catch(() => null);
       const savedMatchesArea = Boolean(
@@ -776,11 +785,19 @@ export default function App() {
       return meters === null || meters <= facilityRadiusKm * 1000;
     })
     .sort((a, b) => {
-      const distanceA = a.distance_meters ?? (a.distance_km != null ? a.distance_km * 1000 : Number.POSITIVE_INFINITY);
-      const distanceB = b.distance_meters ?? (b.distance_km != null ? b.distance_km * 1000 : Number.POSITIVE_INFINITY);
-      return distanceA - distanceB;
+      const roadA = typeof a.road_distance_meters === "number"
+        ? a.road_distance_meters : Number.POSITIVE_INFINITY;
+      const roadB = typeof b.road_distance_meters === "number"
+        ? b.road_distance_meters : Number.POSITIVE_INFINITY;
+      if (roadA !== roadB) return roadA - roadB;
+      const proximityA = a.distance_meters ?? (a.distance_km != null ? a.distance_km * 1000 : Number.POSITIVE_INFINITY);
+      const proximityB = b.distance_meters ?? (b.distance_km != null ? b.distance_km * 1000 : Number.POSITIVE_INFINITY);
+      return proximityA - proximityB;
     });
   const visibleFacilities = filteredFacilities.slice(0, 12);
+  const drivingDistanceCount = filteredFacilities.filter(
+    (facility) => typeof facility.road_distance_meters === "number",
+  ).length;
 
   if (!permissionsReady) {
     return (
@@ -1102,9 +1119,9 @@ export default function App() {
               ))}
             </View>
             <Text style={styles.facilityMeta}>
-              Nearest first · Showing {visibleFacilities.length} of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
+              {drivingDistanceCount > 0 ? "Nearest by driving distance" : "Nearby candidates"} · Showing {visibleFacilities.length} of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
             </Text>
-            <Text style={styles.facilityHint}>Distances are straight-line from the selected search point, not road-driving distances. Road distance appears only when a route is successfully calculated.</Text>
+            <Text style={styles.facilityHint}>Displayed distances are road-network driving estimates from HeiGIT. Estimated times do not include live traffic. The search radius only defines which nearby map candidates are checked.</Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
                 <ActivityIndicator color="#D13B2F" />
@@ -1154,13 +1171,16 @@ export default function App() {
                     <Text style={styles.facilityName}>{facility.name ?? "Emergency facility"}</Text>
                     <Text style={styles.facilityMeta}>
                       {(facility.facility_type ?? "facility").replaceAll("_", " ")}
-                      {typeof facility.distance_meters === "number"
-                        ? " · " + (facility.distance_meters < 1000
-                          ? facility.distance_meters + " m"
-                          : (facility.distance_meters / 1000).toFixed(2) + " km") + " straight-line"
-                        : typeof facility.distance_km === "number"
-                          ? " · " + facility.distance_km.toFixed(2) + " km straight-line"
-                          : ""}
+                      {typeof facility.road_distance_meters === "number"
+                        ? " · " + (facility.road_distance_meters < 1000
+                          ? facility.road_distance_meters + " m"
+                          : (facility.road_distance_meters / 1000).toFixed(2) + " km") + " driving"
+                          + (typeof facility.road_duration_minutes === "number"
+                            ? " · ~" + Math.max(1, Math.round(facility.road_duration_minutes)) + " min"
+                            : "")
+                        : facility.road_route_status === "unreachable"
+                          ? " · No drivable route found"
+                          : " · Road distance unavailable"}
                     </Text>
                     <Text style={facility.verification_status === "verified" ? styles.verifiedText : styles.unverifiedText}>
                       {facility.verification_status === "verified"
