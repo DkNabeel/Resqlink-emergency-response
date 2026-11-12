@@ -2,7 +2,7 @@
 
 ResQLink is a mobile emergency-response project. This repository currently contains the FastAPI backend, SQLite persistence, multilingual rule-based emergency intent handling, NDMA SACHET alert ingestion, geospatial matching, facility management and an on-demand weather forecast adapter.
 
-**Implementation:** The emergency endpoint uses optional Groq AI intent classification when configured, with deterministic multilingual keyword detection as a fallback. Safety instructions remain curated local guidance. The Expo React Native client foundation is in mobile/. It includes foreground GPS, emergency submission and a SQLite-backed offline package cache. Full offline maps and push notification delivery are not implemented.
+**Implementation:** The emergency endpoint uses optional Groq AI intent classification when configured, with deterministic multilingual keyword detection as a fallback. Safety instructions remain curated local guidance. The Expo React Native client is in mobile/. It includes foreground GPS, emergency submission and a SQLite-backed cache. Optional local OSRM routing can calculate road distance, ETA and route geometry offline when a regional OSM extract has been prepared on the laptop. Full offline map tiles and push notification delivery are not implemented.
 
 ## Backend setup
 
@@ -157,7 +157,7 @@ See .env.example. Important settings:
 
 ## Driving routes
 
-POST /routes/traffic calculates one driving route with road distance and estimated travel time using OpenRouteService (HeiGIT). Configure OPENROUTESERVICE_API_KEY in backend/.env. Keep the key on the backend and never place it in the mobile application. This provider returns a road-network estimate; it does not provide live traffic conditions or congestion delays.
+POST /routes/traffic calculates driving distance, estimated duration and route geometry. It uses HeiGIT/OpenRouteService when configured, and it can use a local OSRM graph as its primary or fallback router. Hosted requests require OPENROUTESERVICE_API_KEY; local offline routing requires OFFLINE_ROUTING_URL. Keep all credentials on the backend. Road estimates do not include live traffic. See [offline-routing/README.md](offline-routing/README.md) to prepare a regional OSM graph for offline operation.
 
 ## Nearby facility discovery
 
