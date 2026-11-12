@@ -287,7 +287,7 @@ class FacilityDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["name"], "Fallback Hospital")
         self.assertNotIn("(around:", fake.query)
         self.assertIn("12.855", fake.query)
-        self.assertIn("77.454", fake.query)
+        self.assertIn("77.453921", fake.query)
         self.assertTrue(fake.query.startswith("[out:json][timeout:30];"))
 
     def test_fails_over_to_another_overpass_instance_after_http_502(self):
