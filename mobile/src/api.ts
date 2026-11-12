@@ -117,16 +117,30 @@ export type EmergencyResult = {
   [key: string]: unknown;
 };
 
-const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "");
+const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
+
+export function getApiConfigurationIssue(): string {
+  if (!/^https?:\/\//i.test(API_BASE_URL)) {
+    return "Backend address is missing. Set mobile/.env EXPO_PUBLIC_API_BASE_URL to http://<laptop-hotspot-IPv4>:8000.";
+  }
+  try {
+    const hostname = new URL(API_BASE_URL).hostname.toLowerCase();
+    if (["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(hostname)) {
+      return "The API address points to this phone (localhost). Use your laptop's Wi-Fi IPv4 address from ipconfig, for example http://192.168.x.x:8000.";
+    }
+  } catch {
+    return "Backend address is invalid. Use http://<laptop-hotspot-IPv4>:8000 in mobile/.env.";
+  }
+  return "";
+}
 
 export function isApiConfigured() {
-  return API_BASE_URL.startsWith("http://") || API_BASE_URL.startsWith("https://");
+  return getApiConfigurationIssue() === "";
 }
 
 function requireApiUrl() {
-  if (!isApiConfigured()) {
-    throw new Error("Backend address missing. Set EXPO_PUBLIC_API_BASE_URL in mobile/.env.");
-  }
+  const configurationIssue = getApiConfigurationIssue();
+  if (configurationIssue) throw new Error(configurationIssue);
   return API_BASE_URL;
 }
 
