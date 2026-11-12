@@ -19,27 +19,39 @@ ResQLink has two operating modes: online emergency assistance and a limited offl
 
 - Node.js 22.13 or newer for Expo SDK 58.
 - Android phone and Android development build for background location.
-- Laptop and phone on the same Wi-Fi for the local FastAPI backend.
+- Laptop connected to the phone's personal hotspot (or both devices on the same local Wi-Fi network) for the local FastAPI backend.
 - Grant foreground location and notification permissions. Background location is also requested; the operating system controls whether and how often the task runs.
 
-## Configure the backend address
+## Configure the backend address (phone hotspot or Wi-Fi)
 
-Copy .env.example to .env and set EXPO_PUBLIC_API_BASE_URL to your laptop's LAN IPv4 address. Do not use 127.0.0.1 from the phone; that points to the phone itself.
+A separate Wi-Fi router and Cloudflare tunnel are **not required** for local testing. You can turn on your phone's personal hotspot, connect the laptop to it, and let the ResQLink app on that same phone call the laptop's local FastAPI server.
 
-Example (replace the address with the laptop's actual IPv4):
+1. Turn on Personal Hotspot on the phone and connect your laptop to that hotspot.
+2. On the laptop, open Command Prompt and run `ipconfig`. Under **Wireless LAN adapter Wi-Fi**, copy the laptop's **IPv4 Address**. This is the laptop's address on the hotspot network.
+3. Copy `.env.example` to `.env` in this `mobile` folder and set the address using the laptop's real IPv4 value:
 
 ```env
-EXPO_PUBLIC_API_BASE_URL=http://192.168.1.20:8000
+EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:8000
 ```
 
-Start FastAPI so other devices on the LAN can reach it:
+Replace `192.168.x.x` with the exact laptop IPv4 address. Do not use `localhost`, `127.0.0.1` or `0.0.0.0` in the mobile app: those are not the laptop's reachable address from the phone.
+
+4. Start FastAPI on the laptop so it listens on the hotspot network interface:
 
 ```powershell
-cd D:\PROJECTS\Resqlink-emergency-response\backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd backend
+py -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Allow TCP port 8000 through Windows Defender Firewall on the private network if prompted. Do not expose the development server to public networks.
+5. On the phone, open its browser and visit `http://<laptop-ip>:8000/health`, replacing `<laptop-ip>` with the same IPv4 address. A JSON response containing `"status":"ok"` confirms the phone can reach the backend.
+6. If that page does not open, check Windows Defender Firewall and allow inbound TCP port 8000 for the active hotspot network. Also confirm FastAPI is still running in the terminal.
+7. After changing `.env`, restart Expo from this `mobile` folder so it picks up the new public environment variable:
+
+```powershell
+npx expo start -c
+```
+
+The phone hotspot must allow communication between the phone and its connected laptop. If the phone browser cannot open the laptop's `/health` URL even with FastAPI listening and the firewall allowed, that hotspot/device configuration is blocking local peer access; verify that before changing app code or adding a tunnel.
 
 ## Install and run the online UI
 
