@@ -162,10 +162,6 @@ class OpenRouteServiceRequestTests(unittest.IsolatedAsyncioTestCase):
                 )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class OpenRouteServiceMatrixTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         traffic_service.clear_traffic_matrix_cache()
@@ -293,7 +289,7 @@ class OpenRouteServiceMatrixTests(unittest.IsolatedAsyncioTestCase):
                     12.9716, 77.5946, [(12.9000, 77.6000)]
                 )
 
-    async def test_rejects_more_than_49_destinations_without_network_call(self):
+    async def test_rejects_more_than_24_destinations_without_network_call(self):
         with patch.dict(
             os.environ,
             {"OPENROUTESERVICE_API_KEY": "test-secret"},
@@ -303,5 +299,8 @@ class OpenRouteServiceMatrixTests(unittest.IsolatedAsyncioTestCase):
                 await traffic_service.get_traffic_matrix(
                     12.9716,
                     77.5946,
-                    [(12.9, 77.6 + index * 0.001) for index in range(50)],
+                    [(12.9, 77.6 + index * 0.001) for index in range(25)],
                 )
+
+if __name__ == "__main__":
+    unittest.main()
