@@ -211,7 +211,7 @@ def _location_age_minutes(recorded_at):
 
 
 
-def _select_matrix_candidates(facilities, limit=49):
+def _select_matrix_candidates(facilities, limit=24):
     """Choose a balanced shortlist so one facility type cannot fill the matrix."""
     ordered = sorted(
         facilities,
@@ -1127,7 +1127,7 @@ async def discover_nearby_facilities(
             "road_route_status": "not_calculated",
         })
 
-    matrix_candidates = _select_matrix_candidates(combined, limit=49)
+    matrix_candidates = _select_matrix_candidates(combined, limit=24)
     road_distance_status = "not_needed" if not combined else "not_configured"
     road_distance_error = None
     road_distance_available_count = 0
