@@ -213,7 +213,7 @@ async def discover_facilities(latitude, longitude, radius_km=5):
     # not only the facility types suggested for the currently reported hazard.
     # Schools/colleges are community places, never verified shelters.
     query = f"""
-[out:json][timeout:60];
+[out:json][timeout:30];
 (
   nwr["amenity"~"^(hospital|police|fire_station|shelter|ambulance_station|clinic|doctors|pharmacy|school|college|university|community_centre|social_facility|healthcare|rescue_station|first_aid)$"]({bbox});
   nwr["emergency"~"^(ambulance_station|fire_service|assembly_point|shelter|rescue)$"]({bbox});
@@ -242,11 +242,10 @@ out center tags;
         ) as client:
             for endpoint_index, endpoint in enumerate(OVERPASS_URLS):
                 try:
-                    # Match the 25-second Overpass query budget on the instance
-                    # confirmed by the user's Overpass Turbo test. Keep fallbacks
-                    # bounded so a failed primary does not stall facility lookup.
+                    # Allow a little more than the 30-second Overpass query budget,
+                    # while keeping fallback endpoints bounded.
                     request_timeout = httpx.Timeout(
-                        35.0 if endpoint_index == 0 else 12.0,
+                        38.0 if endpoint_index == 0 else 20.0,
                         connect=5.0 if endpoint_index == 0 else 4.0,
                     )
                     response = await client.post(
@@ -256,7 +255,7 @@ out center tags;
                     )
                     response.raise_for_status()
                     candidate_data = response.json()
-                            if not isinstance(candidate_data, dict) or not isinstance(candidate_data.get("elements"), list):
+                    if not isinstance(candidate_data, dict) or not isinstance(candidate_data.get("elements"), list):
                         raise ValueError("Unexpected Overpass response shape.")
                     # Overpass can return HTTP 200 with an empty elements array
                     # and a JSON "remark" describing a timeout/runtime failure.
