@@ -99,6 +99,43 @@ def _facility_type(tags):
     return None
 
 
+def _facility_name_key(value):
+    import re
+
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+def _facility_quality_score(facility):
+    return (
+        int(bool(facility.get("osm_name"))),
+        int(bool(facility.get("phone"))),
+        int(bool(facility.get("address"))),
+        len(str(facility.get("osm_name") or "")),
+    )
+
+
+def _same_mapped_facility(existing, candidate):
+    if existing.get("facility_type") != candidate.get("facility_type"):
+        return False
+
+    separation_km = haversine_km(
+        existing["latitude"], existing["longitude"],
+        candidate["latitude"], candidate["longitude"],
+    )
+    existing_name = _facility_name_key(existing.get("osm_name"))
+    candidate_name = _facility_name_key(candidate.get("osm_name"))
+
+    # OSM often stores one real place as both a point and a building outline.
+    # Collapse same-name, same-type objects when their coordinates are within
+    # 150 m, retaining the best-tagged representative.
+    if existing_name and candidate_name:
+        return existing_name == candidate_name and separation_km <= 0.15
+
+    # Nameless objects very close together often represent duplicate geometry.
+    # Use a tighter threshold so adjacent facilities are not merged.
+    return not existing_name and not candidate_name and separation_km <= 0.025
+
+
 def normalize_overpass_elements(elements, origin_latitude, origin_longitude, radius_km):
     result = []
     seen = set()
@@ -156,7 +193,7 @@ def normalize_overpass_elements(elements, origin_latitude, origin_longitude, rad
             continue
         seen.add(identity)
 
-        result.append({
+        candidate = {
             "name": display_name,
             "osm_name": name or None,
             "has_map_name": bool(name),
@@ -165,7 +202,11 @@ def normalize_overpass_elements(elements, origin_latitude, origin_longitude, rad
             "facility_type": facility_type,
             "latitude": latitude,
             "longitude": longitude,
+            # This is geodesic straight-line distance from the search point,
+            # not a road-network driving distance.
+            "distance_meters": round(distance * 1000),
             "distance_km": round(distance, 2),
+            "distance_kind": "straight_line",
             "address": address,
             "phone": tags.get("contact:phone") or tags.get("phone"),
             "source_name": "OpenStreetMap contributors",
@@ -178,8 +219,20 @@ def normalize_overpass_elements(elements, origin_latitude, origin_longitude, rad
                 "Community-mapped candidate only. Confirm that the facility exists, is "
                 "open and provides this service before using or verifying it."
             ),
-        })
-    result.sort(key=lambda item: item["distance_km"])
+        }
+        duplicate_index = next(
+            (
+                index for index, existing in enumerate(result)
+                if _same_mapped_facility(existing, candidate)
+            ),
+            None,
+        )
+        if duplicate_index is None:
+            result.append(candidate)
+        elif _facility_quality_score(candidate) > _facility_quality_score(result[duplicate_index]):
+            result[duplicate_index] = candidate
+
+    result.sort(key=lambda item: item["distance_meters"])
     return result
 
 
