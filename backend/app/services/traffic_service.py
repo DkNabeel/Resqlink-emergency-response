@@ -115,7 +115,7 @@ def normalize_route_response(payload):
     }
 
 
-async def get_traffic_route(
+async def _get_heigit_traffic_route(
     origin_latitude,
     origin_longitude,
     destination_latitude,
@@ -283,6 +283,7 @@ def clear_traffic_matrix_cache():
     """Clear in-memory matrix caches (also useful for isolated service tests)."""
     _MATRIX_CACHE.clear()
     _MATRIX_FAILURE_CACHE.clear()
+    _OSRM_MATRIX_CACHE.clear()
 
 
 def _matrix_cache_key(origin_latitude, origin_longitude, destination_keys):
@@ -303,7 +304,7 @@ def _trim_matrix_cache(cache):
         cache.pop(oldest_key, None)
 
 
-async def get_traffic_matrix(origin_latitude, origin_longitude, destinations):
+async def _get_heigit_traffic_matrix(origin_latitude, origin_longitude, destinations):
     """Get road distance and ETA to many facilities with one cached Matrix call.
 
     destinations is an ordered sequence of (latitude, longitude) pairs.
@@ -472,3 +473,332 @@ async def get_traffic_matrix(origin_latitude, origin_longitude, destinations):
             "cache_status": "live",
             "checked_at": checked_at,
         }
+
+
+# Optional local OSRM service. It uses a preprocessed regional OSM road graph,
+# so it continues routing when the laptop has no internet connection.
+OSRM_MATRIX_CACHE_TTL_SECONDS = 300
+_OSRM_MATRIX_CACHE = {}
+
+
+def _local_osrm_url():
+    return os.getenv("OFFLINE_ROUTING_URL", "").strip().rstrip("/")
+
+
+def _prefer_local_routing():
+    return os.getenv("ROUTING_PREFER_LOCAL", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _normalize_osrm_route_response(payload):
+    if not isinstance(payload, dict) or payload.get("code") != "Ok":
+        message = payload.get("message") if isinstance(payload, dict) else None
+        raise TrafficServiceError(
+            "Local offline routing could not find a road route."
+            + (f" OSRM: {str(message)[:200]}" if message else "")
+        )
+
+    routes = payload.get("routes")
+    if not isinstance(routes, list) or not routes:
+        raise TrafficServiceError("Local offline routing returned no route.")
+
+    route = routes[0]
+    distance = route.get("distance")
+    duration = route.get("duration")
+    geometry = route.get("geometry")
+    if (
+        not isinstance(distance, (int, float))
+        or not math.isfinite(distance)
+        or distance < 0
+        or not isinstance(duration, (int, float))
+        or not math.isfinite(duration)
+        or duration < 0
+    ):
+        raise TrafficServiceError(
+            "Local offline route response is missing a valid distance or duration."
+        )
+
+    return {
+        "provider": "Local OSRM · OpenStreetMap",
+        "travel_mode": "DRIVE",
+        "routing_preference": "fastest",
+        "live_traffic_available": False,
+        "estimated_travel_time_seconds": round(duration),
+        "estimated_travel_time_minutes": round(duration / 60, 1),
+        "distance_meters": round(distance),
+        "distance_km": round(distance / 1000, 2),
+        "encoded_polyline": None,
+        "route_geometry": geometry if isinstance(geometry, dict) else None,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "note": (
+            "Offline road-network estimate calculated from the locally stored "
+            "OpenStreetMap road extract. Live traffic and temporary road closures "
+            "are not included."
+        ),
+    }
+
+
+async def get_local_osrm_route(
+    origin_latitude,
+    origin_longitude,
+    destination_latitude,
+    destination_longitude,
+):
+    base_url = _local_osrm_url()
+    if not base_url:
+        raise TrafficNotConfigured(
+            "OFFLINE_ROUTING_URL is not configured; local offline routing is disabled."
+        )
+
+    coordinates = (
+        f"{float(origin_longitude)},{float(origin_latitude)};"
+        f"{float(destination_longitude)},{float(destination_latitude)}"
+    )
+    url = f"{base_url}/route/v1/driving/{coordinates}"
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(5.0, connect=0.8)
+        ) as client:
+            response = await client.get(
+                url,
+                params={
+                    "overview": "full",
+                    "geometries": "geojson",
+                    "steps": "false",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        detail = _provider_error_message(exc.response)
+        raise TrafficServiceError(
+            f"Local OSRM route service returned HTTP {exc.response.status_code}."
+            + (f" {detail}" if detail else "")
+            + " Check that the offline road graph is prepared and the OSRM service is running."
+        ) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise TrafficServiceError(
+            f"Local offline route service is unavailable: {type(exc).__name__}. "
+            "Start the OSRM service on port 5000."
+        ) from exc
+
+    return _normalize_osrm_route_response(payload)
+
+
+def _normalize_osrm_matrix_response(payload, expected_destinations):
+    if not isinstance(payload, dict) or payload.get("code") != "Ok":
+        message = payload.get("message") if isinstance(payload, dict) else None
+        raise TrafficServiceError(
+            "Local OSRM did not return a road-distance matrix."
+            + (f" OSRM: {str(message)[:200]}" if message else "")
+        )
+    distances = payload.get("distances")
+    durations = payload.get("durations")
+    if (
+        not isinstance(distances, list)
+        or not distances
+        or not isinstance(distances[0], list)
+        or not isinstance(durations, list)
+        or not durations
+        or not isinstance(durations[0], list)
+        or len(distances[0]) != expected_destinations
+        or len(durations[0]) != expected_destinations
+    ):
+        raise TrafficServiceError(
+            "Local OSRM returned an incomplete distance matrix."
+        )
+
+    result = []
+    for distance, duration in zip(distances[0], durations[0]):
+        if (
+            not isinstance(distance, (int, float))
+            or not math.isfinite(distance)
+            or distance < 0
+            or not isinstance(duration, (int, float))
+            or not math.isfinite(duration)
+            or duration < 0
+        ):
+            result.append({
+                "road_distance_meters": None,
+                "road_distance_km": None,
+                "road_duration_seconds": None,
+                "road_duration_minutes": None,
+                "road_route_status": "unreachable",
+            })
+        else:
+            result.append({
+                "road_distance_meters": round(distance),
+                "road_distance_km": round(distance / 1000, 2),
+                "road_duration_seconds": round(duration),
+                "road_duration_minutes": round(duration / 60, 1),
+                "road_route_status": "available",
+            })
+    return result
+
+
+async def get_local_osrm_matrix(origin_latitude, origin_longitude, destinations):
+    base_url = _local_osrm_url()
+    if not base_url:
+        raise TrafficNotConfigured(
+            "OFFLINE_ROUTING_URL is not configured; local offline routing is disabled."
+        )
+    if len(destinations) > MATRIX_MAX_DESTINATIONS:
+        raise ValueError(
+            f"At most {MATRIX_MAX_DESTINATIONS} destinations can be routed in one matrix request."
+        )
+
+    parsed = [(float(lat), float(lon)) for lat, lon in destinations]
+    if not parsed:
+        return {
+            "items": [],
+            "provider": "Local OSRM · OpenStreetMap",
+            "cache_status": "not_needed",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    unique = []
+    unique_keys = []
+    seen = set()
+    for lat, lon in parsed:
+        key = (round(lat, 5), round(lon, 5))
+        if key not in seen:
+            seen.add(key)
+            unique.append((lat, lon))
+            unique_keys.append(key)
+
+    cache_key = _matrix_cache_key(float(origin_latitude), float(origin_longitude), unique_keys)
+    now = time.monotonic()
+    cached = _OSRM_MATRIX_CACHE.get(cache_key)
+    if cached and now - cached[0] < OSRM_MATRIX_CACHE_TTL_SECONDS:
+        _, by_key, checked_at = cached
+        return {
+            "items": [
+                dict(by_key[(round(lat, 5), round(lon, 5))])
+                for lat, lon in parsed
+            ],
+            "provider": "Local OSRM · OpenStreetMap",
+            "cache_status": "cached",
+            "checked_at": checked_at,
+        }
+    if cached:
+        _OSRM_MATRIX_CACHE.pop(cache_key, None)
+
+    coordinates = ";".join(
+        [f"{float(origin_longitude)},{float(origin_latitude)}"]
+        + [f"{lon},{lat}" for lat, lon in unique]
+    )
+    destinations_query = ";".join(str(index) for index in range(1, len(unique) + 1))
+    url = f"{base_url}/table/v1/driving/{coordinates}"
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(8.0, connect=0.8)
+        ) as client:
+            response = await client.get(
+                url,
+                params={
+                    "sources": "0",
+                    "destinations": destinations_query,
+                    "annotations": "distance,duration",
+                    "skip_waypoints": "true",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        detail = _provider_error_message(exc.response)
+        raise TrafficServiceError(
+            f"Local OSRM matrix service returned HTTP {exc.response.status_code}."
+            + (f" {detail}" if detail else "")
+        ) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise TrafficServiceError(
+            f"Local offline matrix service is unavailable: {type(exc).__name__}."
+        ) from exc
+
+    rows = _normalize_osrm_matrix_response(payload, len(unique))
+    by_key = {key: row for key, row in zip(unique_keys, rows)}
+    checked_at = datetime.now(timezone.utc).isoformat()
+    _OSRM_MATRIX_CACHE[cache_key] = (time.monotonic(), by_key, checked_at)
+    _trim_matrix_cache(_OSRM_MATRIX_CACHE)
+    return {
+        "items": [
+            dict(by_key[(round(lat, 5), round(lon, 5))])
+            for lat, lon in parsed
+        ],
+        "provider": "Local OSRM · OpenStreetMap",
+        "cache_status": "live",
+        "checked_at": checked_at,
+    }
+
+
+async def get_traffic_route(
+    origin_latitude,
+    origin_longitude,
+    destination_latitude,
+    destination_longitude,
+):
+    local_error = None
+    if _local_osrm_url() and _prefer_local_routing():
+        try:
+            return await get_local_osrm_route(
+                origin_latitude,
+                origin_longitude,
+                destination_latitude,
+                destination_longitude,
+            )
+        except TrafficServiceError as exc:
+            local_error = str(exc)
+
+    try:
+        return await _get_heigit_traffic_route(
+            origin_latitude,
+            origin_longitude,
+            destination_latitude,
+            destination_longitude,
+        )
+    except (TrafficNotConfigured, TrafficServiceError) as online_error:
+        if _local_osrm_url():
+            try:
+                return await get_local_osrm_route(
+                    origin_latitude,
+                    origin_longitude,
+                    destination_latitude,
+                    destination_longitude,
+                )
+            except TrafficServiceError as offline_error:
+                local_error = str(offline_error)
+        if local_error:
+            raise TrafficServiceError(
+                f"HeiGIT route failed: {online_error}. Offline OSRM fallback failed: {local_error}"
+            ) from online_error
+        raise
+
+
+async def get_traffic_matrix(origin_latitude, origin_longitude, destinations):
+    local_error = None
+    if _local_osrm_url() and _prefer_local_routing():
+        try:
+            return await get_local_osrm_matrix(
+                origin_latitude, origin_longitude, destinations
+            )
+        except TrafficServiceError as exc:
+            local_error = str(exc)
+
+    try:
+        return await _get_heigit_traffic_matrix(
+            origin_latitude, origin_longitude, destinations
+        )
+    except (TrafficNotConfigured, TrafficServiceError) as online_error:
+        if _local_osrm_url():
+            try:
+                return await get_local_osrm_matrix(
+                    origin_latitude, origin_longitude, destinations
+                )
+            except TrafficServiceError as offline_error:
+                local_error = str(offline_error)
+        if local_error:
+            raise TrafficServiceError(
+                f"HeiGIT matrix failed: {online_error}. Offline OSRM fallback failed: {local_error}"
+            ) from online_error
+        raise
