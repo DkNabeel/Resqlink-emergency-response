@@ -223,3 +223,8 @@ __marimo__/
 .venv/
 __pycache__/
 *.db
+# Local OSRM graph data and generated map extracts (large, machine-specific)
+offline-routing/data/
+*.osm.pbf
+*.osrm
+*.osrm.*
