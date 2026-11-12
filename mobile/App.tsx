@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import MapView, { Marker } from "react-native-maps";
 import * as Location from "expo-location";
 import "./src/background";
 import { startBackgroundMonitoring, setBackgroundLanguage, getLastBackgroundLocation } from "./src/background";
@@ -26,12 +26,10 @@ import {
   getNearbyFacilities,
   cacheNearbyFacilities,
   getCachedNearbyFacilities,
-  getDrivingRoute,
   type EmergencyResult,
   type NearbyFacility,
   type OfflinePackage,
   type WeatherSnapshot,
-  type DrivingRouteEstimate,
 } from "./src/api";
 import {
   getLatestOfflinePackage,
@@ -79,14 +77,6 @@ function distanceKmBetween(a: Coordinates, b: Coordinates) {
     + Math.cos(latitudeA) * Math.cos(latitudeB) * Math.sin(dLongitude / 2) ** 2;
   return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
-
-type RouteSummary = {
-  facilityKey: string;
-  facilityName: string;
-  distanceKm: number;
-  etaMinutes: number;
-  note: string;
-};
 
 const LANGUAGES: { code: Language; label: string }[] = [
   { code: "en", label: "English" },
@@ -177,11 +167,6 @@ export default function App() {
   const [facilityLookupStatus, setFacilityLookupStatus] = useState<FacilityLookupStatus>("idle");
   const [facilityLookupError, setFacilityLookupError] = useState("");
   const [facilityLookupInfo, setFacilityLookupInfo] = useState("");
-  const [routeEstimate, setRouteEstimate] = useState<RouteSummary | null>(null);
-  const [routeEstimateError, setRouteEstimateError] = useState("");
-  const [routeBusyFacility, setRouteBusyFacility] = useState<string | null>(null);
-  const [routePath, setRoutePath] = useState<Coordinates[]>([]);
-  const [routeDestination, setRouteDestination] = useState<{ coordinates: Coordinates; name: string } | null>(null);
   const [facilityFilter, setFacilityFilter] = useState<FacilityFilter>("emergency");
   const [facilityRadiusKm, setFacilityRadiusKm] = useState(10);
   const [mapExpanded, setMapExpanded] = useState(false);
@@ -192,13 +177,6 @@ export default function App() {
 
   const copy = COPY[language];
 
-  useEffect(() => {
-    if (!mapExpanded || routePath.length < 2) return;
-    mapRef.current?.fitToCoordinates(routePath, {
-      edgePadding: { top: 52, right: 42, bottom: 52, left: 42 },
-      animated: true,
-    });
-  }, [mapExpanded, routePath]);
 
   async function refreshNearbyFacilities(point: Coordinates, radiusKm = facilityRadiusKm) {
     if (!isApiConfigured()) return;
@@ -215,18 +193,11 @@ export default function App() {
       setNearbyFacilities(items);
       setFacilityLookupStatus(items.length > 0 ? "available" : "empty");
       const rawCount = typeof found.raw_element_count === "number" ? found.raw_element_count : null;
-      const verifiedCount = found.verified_project_count ?? items.filter((item) => item.verification_status === "verified").length;
-      const osmCount = found.osm_candidate_count ?? items.filter((item) => item.verification_status !== "verified").length;
       const osmError = typeof found.osm_error === "string" ? found.osm_error : "";
-      const roadProvider = found.road_distance_provider || "Road routing service";
       setFacilityLookupInfo(
-        found.road_distance_status === "not_configured"
-          ? "Road routing needs a HeiGIT key or the local offline routing engine."
-          : found.road_distance_status === "unavailable"
-            ? "Road distance service unavailable: " + (found.road_distance_error ?? "check routing configuration")
-            : found.osm_status === "unavailable"
-              ? "Nearby map search unavailable: " + (osmError || "Overpass is temporarily unavailable")
-              : "",
+        found.osm_status === "unavailable"
+          ? "Nearby map search unavailable: " + (osmError || "Overpass is temporarily unavailable")
+          : "",
       );
       const saved = await cacheNearbyFacilities(items, point, radiusKm).catch(() => null);
       const savedMatchesArea = Boolean(
@@ -461,10 +432,6 @@ export default function App() {
     setCoordinates(point);
     setManualMapLocation(point);
     setManualPinMode(false);
-    setRouteEstimate(null);
-    setRouteEstimateError("");
-    setRoutePath([]);
-    setRouteDestination(null);
     setLocationStatus("Manual map location selected · " + point.latitude.toFixed(5) + ", " + point.longitude.toFixed(5));
     setStatus("Searching facilities around your manually selected map pin");
     void refreshNearbyFacilities(point);
@@ -585,59 +552,20 @@ export default function App() {
     ].join("|");
   }
 
-  async function openFacilityRoute(facility: NearbyFacility) {
+  async function openFacilityDirections(facility: NearbyFacility) {
     if (typeof facility.latitude !== "number" || typeof facility.longitude !== "number") {
       setStatus("This facility has no usable map coordinates");
       return;
     }
-    const key = facilityKey(facility);
-    const destinationPoint = {
-      latitude: facility.latitude,
-      longitude: facility.longitude,
-    };
-    const destinationName = facility.name ?? "Nearby facility";
-    setRouteBusyFacility(key);
-    setRouteEstimateError("");
-    setRouteEstimate(null);
-    setRoutePath([]);
-    setRouteDestination({ coordinates: destinationPoint, name: destinationName });
-    setMapExpanded(true);
-    try {
-      const originPoint = coordinates ?? await obtainLocation();
-      const route: DrivingRouteEstimate = await getDrivingRoute(originPoint, destinationPoint);
-      const rawCoordinates = route.route_geometry?.coordinates;
-      const path = Array.isArray(rawCoordinates)
-        ? rawCoordinates
-            .filter((point) => Array.isArray(point) && point.length >= 2
-              && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1])))
-            .map((point) => ({ latitude: Number(point[1]), longitude: Number(point[0]) }))
-        : [];
-      setRoutePath(path);
-      setRouteEstimate({
-        facilityKey: key,
-        facilityName: destinationName,
-        distanceKm: route.distance_km,
-        etaMinutes: route.estimated_travel_time_minutes,
-        note: route.note,
-      });
-      setStatus(path.length > 1 ? "Driving route preview ready" : "Road route estimate calculated");
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "Road route estimate unavailable.";
-      setRouteEstimateError(detail);
-      setStatus("Route estimate unavailable · you can still open map directions");
-    } finally {
-      setRouteBusyFacility(null);
-    }
-  }
-
-  async function openTurnByTurnDirections() {
-    if (!coordinates || !routeDestination) return;
     const mapsUrl = "https://www.google.com/maps/dir/?api=1"
-      + "&origin=" + coordinates.latitude + "," + coordinates.longitude
-      + "&destination=" + routeDestination.coordinates.latitude + "," + routeDestination.coordinates.longitude
+      + (coordinates
+        ? "&origin=" + coordinates.latitude + "," + coordinates.longitude
+        : "")
+      + "&destination=" + facility.latitude + "," + facility.longitude
       + "&travelmode=driving";
     try {
       await Linking.openURL(mapsUrl);
+      setStatus("Opening driving directions in Google Maps");
     } catch {
       setStatus("Unable to open Google Maps directions. Check your internet connection.");
     }
@@ -672,10 +600,6 @@ export default function App() {
     setMessage("");
     setLastSubmittedMessage("");
     setSelectedPrompt("");
-    setRouteEstimate(null);
-    setRouteEstimateError("");
-    setRoutePath([]);
-    setRouteDestination(null);
     setStatus("New incident started · previous chat context cleared");
   }
 
@@ -744,19 +668,11 @@ export default function App() {
       return meters === null || meters <= facilityRadiusKm * 1000;
     })
     .sort((a, b) => {
-      const roadA = typeof a.road_distance_meters === "number"
-        ? a.road_distance_meters : Number.POSITIVE_INFINITY;
-      const roadB = typeof b.road_distance_meters === "number"
-        ? b.road_distance_meters : Number.POSITIVE_INFINITY;
-      if (roadA !== roadB) return roadA - roadB;
       const proximityA = a.distance_meters ?? (a.distance_km != null ? a.distance_km * 1000 : Number.POSITIVE_INFINITY);
       const proximityB = b.distance_meters ?? (b.distance_km != null ? b.distance_km * 1000 : Number.POSITIVE_INFINITY);
       return proximityA - proximityB;
     });
   const visibleFacilities = filteredFacilities.slice(0, 12);
-  const drivingDistanceCount = filteredFacilities.filter(
-    (facility) => typeof facility.road_distance_meters === "number",
-  ).length;
 
   if (!permissionsReady) {
     return (
@@ -980,18 +896,11 @@ export default function App() {
                 void selectManualMapLocation(point);
               }}
               onMapReady={() => {
-                if (routePath.length > 1) {
-                  mapRef.current?.fitToCoordinates(routePath, {
-                    edgePadding: { top: 52, right: 42, bottom: 52, left: 42 },
-                    animated: true,
-                  });
-                } else {
-                  mapRef.current?.animateToRegion({
-                    ...coordinates,
-                    latitudeDelta: 0.025,
-                    longitudeDelta: 0.025,
-                  }, 0);
-                }
+                mapRef.current?.animateToRegion({
+                  ...coordinates,
+                  latitudeDelta: 0.025,
+                  longitudeDelta: 0.025,
+                }, 0);
               }}
               showsUserLocation
               scrollEnabled
@@ -1019,19 +928,14 @@ export default function App() {
                   coordinate={{ latitude: item.latitude as number, longitude: item.longitude as number }}
                   title={item.name ?? "Emergency facility"}
                   description={(item.facility_type ?? "Facility").replaceAll("_", " ") + " · " + (item.verification_status ?? "unverified")}
-                  pinColor={routeDestination?.coordinates.latitude === item.latitude && routeDestination?.coordinates.longitude === item.longitude ? "#D13B2F" : "#C38F6C"}
+                  pinColor="#C38F6C"
                 />
               ))}
-              {routePath.length > 1 ? (
-                <Polyline coordinates={routePath} strokeWidth={5} strokeColor="#D13B2F" />
-              ) : null}
             </MapView>
             <Text style={styles.mapNote}>
               {manualPinMode
                 ? "Tap anywhere on the map to move the search pin. Nearby facilities will be searched around that point."
-                : routeDestination
-                  ? "Route preview to " + routeDestination.name + ". This is a road-network estimate, not a hazard-cleared or officially safe route."
-                  : "Pan and zoom freely. Use My GPS to recenter, or Place pin to search another location. Map places are unverified unless marked verified."}
+                : "Pan and zoom freely. Use My GPS to recenter, or Place pin to search another location. Map places are unverified unless marked verified."}
             </Text>
           </View>
         ) : null}
@@ -1075,9 +979,9 @@ export default function App() {
               ))}
             </ScrollView>
             <Text style={styles.facilityMeta}>
-              {drivingDistanceCount > 0 ? "Nearest by driving distance" : "Nearby candidates"} · Showing {visibleFacilities.length} of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
+              Showing {visibleFacilities.length} of {filteredFacilities.length} matching {facilityFilter === "all" ? "places" : facilityFilter + " places"} within {facilityRadiusKm} km
             </Text>
-            <Text style={styles.facilityHint}>Road distance · estimated drive time · no live traffic</Text>
+            <Text style={styles.facilityHint}>Approximate straight-line distance from your selected location · not road distance</Text>
             {facilityLookupStatus === "loading" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 }}>
                 <ActivityIndicator color="#D13B2F" />
@@ -1119,22 +1023,20 @@ export default function App() {
               >
                 {visibleFacilities.map((facility, index) => {
               const key = facilityKey(facility);
+              const distanceMeters = typeof facility.distance_meters === "number"
+                ? facility.distance_meters
+                : typeof facility.distance_km === "number" ? facility.distance_km * 1000 : null;
+              const distanceLabel = distanceMeters === null
+                ? ""
+                : distanceMeters < 1000
+                  ? " · " + Math.round(distanceMeters) + " m straight-line"
+                  : " · " + (distanceMeters / 1000).toFixed(1) + " km straight-line";
               return (
                 <View key={key + "-" + index} style={styles.facilityRow}>
                   <View style={styles.facilityCopy}>
                     <Text style={styles.facilityName}>{facility.name ?? "Emergency facility"}</Text>
                     <Text style={styles.facilityMeta}>
-                      {(facility.facility_type ?? "facility").replaceAll("_", " ")}
-                      {typeof facility.road_distance_meters === "number"
-                        ? " · " + (facility.road_distance_meters < 1000
-                          ? facility.road_distance_meters + " m"
-                          : (facility.road_distance_meters / 1000).toFixed(2) + " km") + " driving"
-                          + (typeof facility.road_duration_minutes === "number"
-                            ? " · ~" + Math.max(1, Math.round(facility.road_duration_minutes)) + " min"
-                            : "")
-                        : facility.road_route_status === "unreachable"
-                          ? " · No drivable route found"
-                          : " · Road distance unavailable"}
+                      {(facility.facility_type ?? "facility").replaceAll("_", " ") + distanceLabel}
                     </Text>
                     <Text style={facility.verification_status === "verified" ? styles.verifiedText : styles.unverifiedText}>
                       {facility.verification_status === "verified"
@@ -1149,33 +1051,14 @@ export default function App() {
                       <Text style={styles.callFacilityText}>Call</Text>
                     </Pressable>
                   ) : null}
-                  <Pressable onPress={() => openFacilityRoute(facility)} disabled={routeBusyFacility === key} style={styles.routeButton}>
-                    <Text style={styles.routeButtonText}>{routeBusyFacility === key ? "Calculating..." : "Route ↗"}</Text>
+                  <Pressable onPress={() => openFacilityDirections(facility)} style={styles.routeButton}>
+                    <Text style={styles.routeButtonText}>Google Maps ↗</Text>
                   </Pressable>
                 </View>
               );
                 })}
               </ScrollView>
             ) : null}
-            {routeEstimate ? (
-              <View style={styles.routePreviewCard}>
-                <Text style={styles.facilityName}>Driving route · {routeEstimate.facilityName}</Text>
-                <Text style={styles.routePreviewMetric}>{routeEstimate.distanceKm.toFixed(2)} km · about {routeEstimate.etaMinutes.toFixed(0)} min</Text>
-                <Text style={styles.facilityHint}>{routeEstimate.note} Not checked against live disaster hazards.</Text>
-                <Pressable onPress={openTurnByTurnDirections} style={styles.routeDirectionsButton}>
-                  <Text style={styles.routeDirectionsText}>Open turn-by-turn directions ↗</Text>
-                </Pressable>
-              </View>
-            ) : routeDestination ? (
-              <View style={styles.routePreviewCard}>
-                <Text style={styles.facilityName}>Route destination · {routeDestination.name}</Text>
-                <Text style={styles.facilityHint}>The in-app road estimate is unavailable. You can still request directions from Google Maps.</Text>
-                <Pressable onPress={openTurnByTurnDirections} style={styles.routeDirectionsButton}>
-                  <Text style={styles.routeDirectionsText}>Open directions in Google Maps ↗</Text>
-                </Pressable>
-              </View>
-            ) : null}
-            {routeEstimateError ? <Text style={styles.diagnosticWarning}>{routeEstimateError}</Text> : null}
             <Pressable onPress={() => refreshNearbyFacilities(coordinates, facilityRadiusKm)} style={styles.recheckButton}>
               <Text style={styles.recheckText}>Search this area again</Text>
             </Pressable>
@@ -1372,10 +1255,6 @@ const styles = StyleSheet.create({
   callFacilityText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
   routeButton: { backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#5B3733", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
   routeButtonText: { color: "#C38F6C", fontSize: 10, fontWeight: "900" },
-  routePreviewCard: { paddingTop: 11, borderTopWidth: 1, borderTopColor: "#2A2A2A", marginTop: 6, gap: 7 },
-  routePreviewMetric: { color: "#F7F7F7", fontSize: 15, fontWeight: "900" },
-  routeDirectionsButton: { backgroundColor: "#211412", borderWidth: 1, borderColor: "#5B3733", borderRadius: 10, padding: 12, alignItems: "center" },
-  routeDirectionsText: { color: "#D13B2F", fontSize: 11, fontWeight: "900" },
   modalShade: { flex: 1, backgroundColor: "rgba(0,0,0,0.78)", justifyContent: "center", padding: 22 },
   weatherModal: { backgroundColor: "#111111", borderWidth: 1, borderColor: "#2C2C2C", borderRadius: 18, padding: 18, gap: 14 },
   weatherModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
