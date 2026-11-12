@@ -11,8 +11,7 @@ ResQLink has two operating modes: online emergency assistance and a limited offl
 - Facility list labels verified project records separately from unverified OpenStreetMap candidates.
 - Tap a facility to open driving directions in Google Maps. Directions are not checked against live disaster hazards.
 - Separate weather pop-up for temperature, humidity, wind and rain probability using Open-Meteo.
-- Downloaded offline package containing emergency instructions, India emergency number 112, SACHET alert snapshot, verified facilities and nearby unverified OpenStreetMap candidates when discovery succeeds.
-- Expo SQLite keeps only the latest downloaded area package to limit storage.
+- SQLite keeps the latest cached emergency guidance and facility snapshot for fallback display.
 - Best-effort background location task can refresh the latest area package and raise local notifications for newly matched SACHET alerts.
 
 ## Requirements
