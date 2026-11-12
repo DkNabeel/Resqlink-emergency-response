@@ -157,7 +157,7 @@ See .env.example. Important settings:
 
 ## Driving routes
 
-POST /routes/traffic calculates driving distance, estimated duration and route geometry. It uses HeiGIT/OpenRouteService when configured, and it can use a local OSRM graph as its primary or fallback router. Hosted requests require OPENROUTESERVICE_API_KEY; local offline routing requires OFFLINE_ROUTING_URL. Keep all credentials on the backend. Road estimates do not include live traffic. See [offline-routing/README.md](offline-routing/README.md) to prepare a regional OSM graph for offline operation.
+POST /routes/traffic calculates driving distance, estimated duration and route geometry. It uses HeiGIT/OpenRouteService when configured, and it can use a local OSRM graph as its primary or fallback router. Hosted requests require OPENROUTESERVICE_API_KEY; local offline routing requires OFFLINE_ROUTING_URL. Keep all credentials on the backend. Road estimates do not include live traffic. Run `offline-routing/setup-osrm.ps1` once from PowerShell to automatically download and verify the Southern India OSM extract, build the local OSRM graph, and configure local-first routing. See [offline-routing/README.md](offline-routing/README.md) for setup and offline testing.
 
 ## Nearby facility discovery
 
@@ -166,4 +166,4 @@ GET /facilities/discover?latitude=12.97&longitude=77.59&radius_km=5 queries the 
 
 ## Mobile application
 
-See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. Set EXPO_PUBLIC_API_BASE_URL to the backend's laptop LAN address; the phone and laptop must be on the same Wi-Fi for local development. The client does not include offline map tiles or push notification delivery.
+See mobile/README.md. The Expo React Native source includes foreground GPS, a language selector, emergency message submission, a location-based offline-package downloader, ETag conditional refresh and SQLite persistence on the phone. Set EXPO_PUBLIC_API_BASE_URL to the backend's laptop LAN address; the phone and laptop must be on the same Wi-Fi for local development. The client does not include offline visual map tiles or push notification delivery; offline road routing is hosted locally by OSRM on the laptop.
