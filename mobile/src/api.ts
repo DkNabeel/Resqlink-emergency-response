@@ -21,11 +21,6 @@ export type NearbyFacility = {
   distance_km?: number;
   distance_meters?: number;
   distance_kind?: "straight_line" | string;
-  road_distance_meters?: number | null;
-  road_distance_km?: number | null;
-  road_duration_seconds?: number | null;
-  road_duration_minutes?: number | null;
-  road_route_status?: "available" | "unreachable" | "not_calculated" | string;
   address?: string | null;
   phone?: string | null;
   source_name?: string | null;
@@ -35,23 +30,6 @@ export type NearbyFacility = {
   has_map_name?: boolean;
   osm_name?: string | null;
   osm_id?: number | string | null;
-};
-
-export type DrivingRouteEstimate = {
-  provider: string;
-  travel_mode: string;
-  estimated_travel_time_seconds: number;
-  estimated_travel_time_minutes: number;
-  distance_meters: number;
-  distance_km: number;
-  live_traffic_available: boolean;
-  note: string;
-  checked_at?: string;
-  route_geometry?: {
-    type?: string;
-    coordinates?: [number, number][];
-  } | null;
-  encoded_polyline?: string | null;
 };
 
 export type WeatherSnapshot = {
@@ -240,13 +218,6 @@ export async function getNearbyFacilities(
   osm_candidate_count?: number;
   osm_status?: string;
   osm_error?: string | null;
-  road_distance_status?: "available" | "partial" | "unavailable" | "not_configured" | "not_needed" | string;
-  road_distance_provider?: string;
-  road_distance_candidate_count?: number;
-  road_distance_available_count?: number;
-  road_distance_error?: string | null;
-  road_distance_checked_at?: string | null;
-  road_distance_cache_status?: string | null;
   radius_km?: number;
 }> {
   const query = new URLSearchParams({
@@ -275,13 +246,6 @@ export async function getNearbyFacilities(
     osm_candidate_count?: number;
     osm_status?: string;
     osm_error?: string | null;
-    road_distance_status?: "available" | "partial" | "unavailable" | "not_configured" | "not_needed" | string;
-    road_distance_provider?: string;
-    road_distance_candidate_count?: number;
-    road_distance_available_count?: number;
-    road_distance_error?: string | null;
-    road_distance_checked_at?: string | null;
-    road_distance_cache_status?: string | null;
     radius_km?: number;
   };
   if (!payload || !Array.isArray(payload.items)) {
@@ -331,31 +295,6 @@ export async function cacheNearbyFacilities(
 
 export async function getCachedNearbyFacilities(): Promise<CachedNearbyFacilities | null> {
   return getNearbyFacilitiesCache();
-}
-
-export async function getDrivingRoute(
-  origin: Coordinates,
-  destination: Coordinates,
-): Promise<DrivingRouteEstimate> {
-  const response = await fetch(requireApiUrl() + "/routes/traffic", {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({
-      origin_latitude: origin.latitude,
-      origin_longitude: origin.longitude,
-      destination_latitude: destination.latitude,
-      destination_longitude: destination.longitude,
-    }),
-  });
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(
-      "Driving route estimate failed with HTTP " +
-        response.status +
-        (detail ? ": " + detail.slice(0, 180) : "."),
-    );
-  }
-  return (await response.json()) as DrivingRouteEstimate;
 }
 
 export async function getNearbyWeather(point: Coordinates): Promise<WeatherSnapshot> {
