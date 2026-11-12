@@ -14,10 +14,11 @@ ROUTES_URL = (
 )
 MATRIX_URL = "https://api.heigit.org/openrouteservice/v2/matrix/driving-car"
 
-# One matrix request covers the origin and up to 49 destinations (50 points).
+# HeiGIT hosted requests with dynamic arguments allow 25 locations total:
+# one origin plus up to 24 facility destinations per Matrix call.
 # Cache successful matrices for five minutes and briefly cool down failed keys
 # so retries, GPS refreshes, or repeated renders cannot hammer HeiGIT.
-MATRIX_MAX_DESTINATIONS = 49
+MATRIX_MAX_DESTINATIONS = 24
 MATRIX_CACHE_TTL_SECONDS = 300
 MATRIX_FAILURE_COOLDOWN_SECONDS = 45
 MATRIX_CACHE_MAX_ENTRIES = 64
@@ -319,7 +320,7 @@ async def get_traffic_matrix(origin_latitude, origin_longitude, destinations):
 
     if len(destinations) > MATRIX_MAX_DESTINATIONS:
         raise ValueError(
-            f"At most {MATRIX_MAX_DESTINATIONS} destinations can be routed in one matrix request."
+            f"At most {MATRIX_MAX_DESTINATIONS} facility destinations can be routed in one matrix request."
         )
 
     parsed_destinations = []
