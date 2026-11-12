@@ -529,9 +529,9 @@ def _normalize_osrm_route_response(payload):
         "travel_mode": "DRIVE",
         "routing_preference": "fastest",
         "live_traffic_available": False,
-        "estimated_travel_time_seconds": round(duration),
+        "estimated_travel_time_seconds": _round_positive(duration),
         "estimated_travel_time_minutes": round(duration / 60, 1),
-        "distance_meters": round(distance),
+        "distance_meters": _round_positive(distance),
         "distance_km": round(distance / 1000, 2),
         "encoded_polyline": None,
         "route_geometry": geometry if isinstance(geometry, dict) else None,
@@ -633,9 +633,9 @@ def _normalize_osrm_matrix_response(payload, expected_destinations):
             })
         else:
             result.append({
-                "road_distance_meters": round(distance),
+                "road_distance_meters": _round_positive(distance),
                 "road_distance_km": round(distance / 1000, 2),
-                "road_duration_seconds": round(duration),
+                "road_duration_seconds": _round_positive(duration),
                 "road_duration_minutes": round(duration / 60, 1),
                 "road_route_status": "available",
             })
