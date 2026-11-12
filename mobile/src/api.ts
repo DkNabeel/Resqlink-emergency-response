@@ -19,6 +19,8 @@ export type NearbyFacility = {
   latitude?: number;
   longitude?: number;
   distance_km?: number;
+  distance_meters?: number;
+  distance_kind?: "straight_line" | string;
   address?: string | null;
   phone?: string | null;
   source_name?: string | null;
