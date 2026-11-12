@@ -209,10 +209,13 @@ export default function App() {
       const rawCount = typeof found.raw_element_count === "number" ? found.raw_element_count : null;
       const verifiedCount = found.verified_project_count ?? items.filter((item) => item.verification_status === "verified").length;
       const osmCount = found.osm_candidate_count ?? items.filter((item) => item.verification_status !== "verified").length;
+      const osmError = typeof found.osm_error === "string" ? found.osm_error : "";
       setFacilityLookupInfo(
         `Received ${items.length} facilities · ${verifiedCount} verified project records · ${osmCount} OpenStreetMap candidates`
         + (rawCount !== null ? ` · ${rawCount} raw map objects` : "")
-        + (found.osm_status === "unavailable" ? " · OpenStreetMap temporarily unavailable" : "")
+        + (found.osm_status === "unavailable"
+          ? " · OpenStreetMap query failed" + (osmError ? ": " + osmError.slice(0, 150) : "")
+          : rawCount === 0 ? " · Overpass returned no mapped objects for this query" : "")
         + (found.provider_endpoint ? ` · ${found.provider_endpoint.replace("https://", "").replace("http://", "")}` : ""),
       );
       const saved = await cacheNearbyFacilities(items, point, radiusKm).catch(() => null);
@@ -244,9 +247,11 @@ export default function App() {
       }
       setStatus(items.length > 0
         ? `Found ${items.length} nearby facility candidate(s) within ${radiusKm} km`
-        : savedMatchesArea
-          ? "No new live results · showing saved facilities for this area"
-          : `No mapped public-service or community facilities returned within ${radiusKm} km`);
+        : found.osm_status === "unavailable"
+          ? "OpenStreetMap could not complete the facility query · check the finder diagnostics"
+          : savedMatchesArea
+            ? "No new live results · showing saved facilities for this area"
+            : `No matching OpenStreetMap facilities are mapped within ${radiusKm} km · this does not prove real facilities are absent`);
     } catch (error) {
       if (requestSequence !== facilityRequestSequence.current) return;
       const detail = error instanceof Error ? error.message : "Nearby facility lookup failed.";
