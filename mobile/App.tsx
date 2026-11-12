@@ -218,6 +218,7 @@ export default function App() {
       const verifiedCount = found.verified_project_count ?? items.filter((item) => item.verification_status === "verified").length;
       const osmCount = found.osm_candidate_count ?? items.filter((item) => item.verification_status !== "verified").length;
       const osmError = typeof found.osm_error === "string" ? found.osm_error : "";
+      const roadProvider = found.road_distance_provider || "Road routing service";
       setFacilityLookupInfo(
         found.road_distance_status === "not_configured"
           ? "Road routing needs a HeiGIT key or the local offline routing engine."
