@@ -9,7 +9,7 @@ ResQLink has two operating modes: online emergency assistance and a limited offl
 - Location and notification permission gate before entering the app.
 - Online map showing the current GPS position and nearby emergency facilities.
 - Facility list labels verified project records separately from unverified OpenStreetMap candidates.
-- Tap a facility to open driving directions in Google Maps. Directions are not checked against live disaster hazards.
+- Facility results show approximate straight-line distance from the selected location. Tap **Google Maps** to open externally calculated driving directions; they are not checked against live disaster hazards.
 - Separate weather pop-up for temperature, humidity, wind and rain probability using Open-Meteo.
 - SQLite keeps the latest cached emergency guidance and facility snapshot for fallback display.
 - Best-effort background location task can refresh the latest area package and raise local notifications for newly matched SACHET alerts.
@@ -73,7 +73,7 @@ A new native build is required after changing location, notification or map nati
 
 - Offline mode uses multilingual built-in keyword guidance and the latest successfully saved area package. It does not use Groq.
 - Cached facility candidates from OpenStreetMap are community-mapped and labelled unverified. Confirm details before relying on them.
-- The current map view uses online map tiles. Offline map tiles and offline road-by-road routing are not implemented in this branch.
+- The current map view uses online map tiles. Custom in-app online/offline road routing is deferred; the current demo opens Google Maps for driving directions and does not require Docker.
 - Facility route buttons open an external map app when connectivity is available. A normal route estimate is not a verified safe evacuation route.
 - Background refresh requests a ten-minute update interval, but Android/iOS can delay, throttle or stop background work. It is best-effort, not a guaranteed timer.
 - The current alert task can issue local notifications after it wakes and fetches a package with location-matched SACHET alerts. It is not a remote push-notification service; server-driven push registration and delivery are not implemented.
