@@ -300,6 +300,8 @@ def system_status():
                 "api_key_configured": bool(os.getenv("OPENROUTESERVICE_API_KEY")),
                 "live_traffic_available": False,
                 "route_estimates": "road_network_based",
+                "offline_routing_configured": bool(os.getenv("OFFLINE_ROUTING_URL", "").strip()),
+                "prefer_local_routing": os.getenv("ROUTING_PREFER_LOCAL", "false").strip().lower() in {"1", "true", "yes", "on"},
             },
             "facility_discovery": {
                 "provider": "OpenStreetMap Overpass API",
@@ -1133,6 +1135,7 @@ async def discover_nearby_facilities(
     road_distance_available_count = 0
     road_distance_checked_at = None
     road_distance_cache_status = None
+    road_distance_provider = None
 
     if matrix_candidates:
         try:
@@ -1152,6 +1155,7 @@ async def discover_nearby_facilities(
             )
             road_distance_checked_at = matrix.get("checked_at")
             road_distance_cache_status = matrix.get("cache_status")
+            road_distance_provider = matrix.get("provider")
             road_distance_status = (
                 "available"
                 if len(matrix_candidates) == len(combined)
@@ -1215,7 +1219,7 @@ async def discover_nearby_facilities(
         "osm_status": osm_status,
         "osm_error": osm_error,
         "road_distance_status": road_distance_status,
-        "road_distance_provider": "OpenRouteService (HeiGIT)",
+        "road_distance_provider": road_distance_provider,
         "road_distance_candidate_count": len(matrix_candidates),
         "road_distance_available_count": road_distance_available_count,
         "road_distance_error": road_distance_error,
