@@ -19,6 +19,7 @@ import { startBackgroundMonitoring, setBackgroundLanguage, getLastBackgroundLoca
 import {
   getOfflineGuidance,
   getSystemStatus,
+  getApiConfigurationIssue,
   isApiConfigured,
   sendEmergencyChat,
   getNearbyWeather,
@@ -35,8 +36,7 @@ import {
 } from "./src/api";
 import {
   getLatestOfflinePackage,
-  getEmergencyChatHistory,
-  saveEmergencyChatHistory,
+  clearEmergencyChatHistory,
 } from "./src/cache";
 
 type Coordinates = { latitude: number; longitude: number };
@@ -152,9 +152,9 @@ export default function App() {
   const [status, setStatus] = useState("Ready to help");
   const [locationStatus, setLocationStatus] = useState("Location has not been requested");
   const [backendConnection, setBackendConnection] = useState<"checking" | "connected" | "unreachable">("checking");
+  const [backendConnectionError, setBackendConnectionError] = useState("");
   const [backendAiConfigured, setBackendAiConfigured] = useState<boolean | null>(null);
   const [chatHistory, setChatHistory] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
-  const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
   const [weatherVisible, setWeatherVisible] = useState(false);
   const [weatherBusy, setWeatherBusy] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherSnapshot | null>(null);
@@ -289,14 +289,24 @@ export default function App() {
   }
 
   async function checkBackendConnection() {
+    const configurationIssue = getApiConfigurationIssue();
+    if (configurationIssue) {
+      setBackendConnection("unreachable");
+      setBackendConnectionError(configurationIssue);
+      setBackendAiConfigured(null);
+      return;
+    }
     setBackendConnection("checking");
+    setBackendConnectionError("");
     try {
       const health = await getSystemStatus();
       setBackendConnection(health.api?.status === "ok" ? "connected" : "unreachable");
+      setBackendConnectionError(health.api?.status === "ok" ? "" : "The backend responded, but its health status is not OK.");
       setBackendAiConfigured(Boolean(health.providers?.ai?.api_key_configured));
-    } catch {
+    } catch (error) {
       setBackendConnection("unreachable");
       setBackendAiConfigured(null);
+      setBackendConnectionError(error instanceof Error ? error.message : "Could not reach the laptop backend.");
     }
   }
 
@@ -305,22 +315,14 @@ export default function App() {
   }, [language]);
 
   useEffect(() => {
-    let active = true;
-    getEmergencyChatHistory()
-      .then((savedHistory) => {
-        if (active) setChatHistory(savedHistory);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setChatHistoryLoaded(true);
-      });
-    return () => { active = false; };
+    // A fresh app launch always begins a new emergency conversation.
+    // Keep conversation context in memory only while this app session is open.
+    clearEmergencyChatHistory().catch(() => {});
+    setMessage("");
+    setSelectedPrompt("");
+    setChatHistory([]);
+    setResult(null);
   }, []);
-
-  useEffect(() => {
-    if (!chatHistoryLoaded) return;
-    saveEmergencyChatHistory(chatHistory).catch(() => {});
-  }, [chatHistory, chatHistoryLoaded]);
 
   useEffect(() => {
     let active = true;
@@ -359,10 +361,14 @@ export default function App() {
         setBackendConnection(health.api?.status === "ok" ? "connected" : "unreachable");
         setBackendAiConfigured(Boolean(health.providers?.ai?.api_key_configured));
       })
-      .catch(() => {
+      .catch((error) => {
         if (active) {
           setBackendConnection("unreachable");
           setBackendAiConfigured(null);
+          setBackendConnectionError(
+            getApiConfigurationIssue()
+              || (error instanceof Error ? error.message : "Could not reach the laptop backend."),
+          );
         }
       });
     return () => { active = false; };
@@ -463,6 +469,8 @@ export default function App() {
         radius_km: 10,
         ...geoDetails,
       });
+      setBackendConnection("connected");
+      setBackendConnectionError("");
       setResult(response);
       if (response.in_scope) {
         if (point) {
@@ -495,6 +503,7 @@ export default function App() {
       const fallback = getOfflineGuidance(submittedMessage, language, cached);
       const reason = error instanceof Error ? error.message : "Unable to reach the backend.";
       setBackendConnection("unreachable");
+      setBackendConnectionError(reason);
       const offlineReply = fallback.reply ?? (fallback.guidance ?? []).join("\n");
       setResult({ ...fallback, reply: offlineReply, diagnostic_message: reason });
       if (fallback.in_scope) {
@@ -796,7 +805,7 @@ export default function App() {
             <View style={styles.chatHeader}>
               <View style={styles.chatHeadingCopy}>
                 <Text style={styles.sectionTitle}>Latest emergency update</Text>
-                <Text style={styles.chatStorageNote}>Recent messages saved on this device for offline continuity</Text>
+                <Text style={styles.chatStorageNote}>This conversation is kept only while ResQLink is open</Text>
               </View>
               <Pressable onPress={startNewIncident} style={styles.newIncidentButton}>
                 <Text style={styles.newIncidentText}>New incident</Text>
@@ -1085,9 +1094,7 @@ export default function App() {
               ? "● Backend reachable" + (backendAiConfigured ? " · Groq key configured" : " · Groq key missing")
               : backendConnection === "checking"
                 ? "◌ Checking backend connection..."
-                : isApiConfigured()
-                  ? "○ Backend unreachable · check laptop IP, Wi-Fi and firewall"
-                  : "○ Configure mobile/.env API address"}
+                : "○ " + (backendConnectionError || getApiConfigurationIssue() || "Backend unreachable · check laptop hotspot IP and Windows Firewall")}
           </Text>
           <Pressable onPress={checkBackendConnection} style={styles.recheckButton}>
             <Text style={styles.recheckText}>Test backend connection again</Text>
