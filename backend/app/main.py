@@ -1166,19 +1166,32 @@ async def discover_nearby_facilities(
             road_distance_error = str(exc)[:320]
             logger.warning("HeiGIT facility distance matrix unavailable: %s", exc)
 
-    # Show successfully routed facilities first, sorted by actual road distance.
-    # Remaining candidates stay available but never receive a false road value.
-    combined.sort(
-        key=lambda item: (
-            item.get("road_distance_meters") is None,
-            float(
-                item.get(
-                    "road_distance_meters",
-                    item.get("distance_meters", float(item.get("distance_km", 999)) * 1000),
-                )
-            ),
-        )
-    )
+    # Keep sorting robust for older/manual facility records that may not
+    # contain a straight-line distance field.
+    def _facility_proximity_meters(item):
+        distance_meters = item.get("distance_meters")
+        if distance_meters is not None:
+            try:
+                return float(distance_meters)
+            except (TypeError, ValueError):
+                pass
+        distance_km = item.get("distance_km")
+        if distance_km is not None:
+            try:
+                return float(distance_km) * 1000
+            except (TypeError, ValueError):
+                pass
+        return float("inf")
+
+    def _facility_road_sort_key(item):
+        road_distance = item.get("road_distance_meters")
+        if isinstance(road_distance, (int, float)):
+            return (0, float(road_distance))
+        return (1, _facility_proximity_meters(item))
+
+    # Routed candidates are ordered by real road distance. Unrouted records
+    # follow them using geographic proximity only as a stable fallback.
+    combined.sort(key=_facility_road_sort_key)
     logger.info(
         "Facility discovery completed: radius_km=%s verified=%s osm_candidates=%s raw_map_objects=%s total=%s road_routed=%s/%s matrix_cache=%s road_status=%s osm_status=%s",
         radius_km,
