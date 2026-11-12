@@ -878,9 +878,11 @@ async def create_offline_package(
         if distance <= radius_km:
             nearby_verified_facilities.append({
                 **facility,
+                "distance_meters": round(distance * 1000),
                 "distance_km": round(distance, 2),
+                "distance_kind": "straight_line",
             })
-    nearby_verified_facilities.sort(key=lambda item: item["distance_km"])
+    nearby_verified_facilities.sort(key=lambda item: item["distance_meters"])
 
     # Include nearby OpenStreetMap candidates in the package so the phone can
     # save them locally. They remain explicitly unverified and are never
@@ -1046,7 +1048,9 @@ async def discover_nearby_facilities(
         if distance <= radius_km:
             verified_facilities.append({
                 **facility,
+                "distance_meters": round(distance * 1000),
                 "distance_km": round(distance, 2),
+                "distance_kind": "straight_line",
                 "source_name": facility.get("source_name") or "ResQLink verified directory",
                 "verification_status": "verified",
             })
@@ -1074,7 +1078,11 @@ async def discover_nearby_facilities(
             continue
         seen.add(key)
         combined.append(facility)
-    combined.sort(key=lambda item: float(item.get("distance_km", 999)))
+    combined.sort(
+        key=lambda item: float(
+            item.get("distance_meters", float(item.get("distance_km", 999)) * 1000)
+        )
+    )
     logger.info(
         "Facility discovery completed: radius_km=%s verified=%s osm_candidates=%s raw_map_objects=%s total=%s osm_status=%s",
         radius_km,
