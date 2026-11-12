@@ -17,6 +17,34 @@ class TrafficServiceError(RuntimeError):
     pass
 
 
+def _provider_error_message(response):
+    """Extract a safe, concise provider error without exposing request headers."""
+    message = ""
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        payload = None
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = str(error.get("message") or error.get("description") or "").strip()
+            code = error.get("code")
+            if code is not None:
+                message = (message + f" (provider code {code})").strip()
+        elif isinstance(error, str):
+            message = error.strip()
+        if not message:
+            message = str(payload.get("message") or payload.get("description") or "").strip()
+
+    if not message:
+        try:
+            message = str(response.text or "").strip()
+        except Exception:
+            message = ""
+    return message[:320]
+
+
 def normalize_route_response(payload):
     """Normalize an OpenRouteService directions response."""
     routes = payload.get("routes") if isinstance(payload, dict) else None
@@ -94,6 +122,10 @@ async def get_traffic_route(
         raise ValueError("Longitude must be between -180 and 180.")
 
     api_key = os.getenv("OPENROUTESERVICE_API_KEY", "").strip()
+    # HeiGIT expects the key itself in Authorization, not "Bearer <key>".
+    # Accept either .env style so an accidental prefix does not cause a 403.
+    if api_key.lower().startswith("bearer "):
+        api_key = api_key[7:].strip()
     if not api_key:
         raise TrafficNotConfigured(
             "Configure OPENROUTESERVICE_API_KEY to enable driving routes."
@@ -128,9 +160,32 @@ async def get_traffic_route(
             data = response.json()
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
+        provider_message = _provider_error_message(exc.response)
+        if status == 403:
+            detail = f" HeiGIT says: {provider_message}." if provider_message else ""
+            raise TrafficServiceError(
+                "HeiGIT denied the driving-route request (HTTP 403)." + detail
+                + " This is an upstream access refusal, not a ResQLink network failure. "
+                + "If the provider says access is disallowed, copy the complete API key "
+                + "from account.heigit.org using its Copy button and paste the raw key "
+                + "into backend/.env as OPENROUTESERVICE_API_KEY. Do not use the masked "
+                + "key preview; a daily quota limit can also cause HTTP 403."
+            ) from exc
+        if status == 401:
+            raise TrafficServiceError(
+                "HeiGIT rejected the route API key (HTTP 401). Check that "
+                "OPENROUTESERVICE_API_KEY contains the full, current key."
+                + (f" Provider message: {provider_message}" if provider_message else "")
+            ) from exc
+        if status == 429:
+            raise TrafficServiceError(
+                "HeiGIT route request limit reached (HTTP 429). Wait for the "
+                "minute-level limit to reset before retrying."
+                + (f" Provider message: {provider_message}" if provider_message else "")
+            ) from exc
         raise TrafficServiceError(
-            f"OpenRouteService returned HTTP {status}. Check the API key, "
-            "account access and request quota."
+            f"OpenRouteService returned HTTP {status}."
+            + (f" Provider message: {provider_message}" if provider_message else "")
         ) from exc
     except (httpx.HTTPError, ValueError) as exc:
         raise TrafficServiceError(
