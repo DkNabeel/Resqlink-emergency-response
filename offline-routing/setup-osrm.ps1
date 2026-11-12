@@ -62,6 +62,7 @@ if ([string]::IsNullOrWhiteSpace($PbfPath)) {
     }
 
     $downloadIsValid = $false
+    $partialPbf = "$targetPbf.partial"
     if (Test-Path $targetPbf) {
         $existingHash = (Get-FileHash -LiteralPath $targetPbf -Algorithm MD5).Hash.ToLowerInvariant()
         if ($existingHash -eq $expectedMd5) {
@@ -69,7 +70,7 @@ if ([string]::IsNullOrWhiteSpace($PbfPath)) {
             $downloadIsValid = $true
         }
         else {
-            Write-Host "An older or incomplete map file exists. It will be replaced."
+            Write-Host "An older map file exists. It will be replaced after the new download is verified."
             Remove-Item -LiteralPath $targetPbf -Force
         }
     }
@@ -80,16 +81,17 @@ if ([string]::IsNullOrWhiteSpace($PbfPath)) {
         }
 
         Write-Host "Downloading regional OSM data. If interrupted, rerun this command; curl will resume the partial file."
-        & curl.exe --location --fail --show-error --retry 4 --retry-delay 3 --continue-at - --output $targetPbf $downloadUrl
+        & curl.exe --location --fail --show-error --retry 4 --retry-delay 3 --continue-at - --output $partialPbf $downloadUrl
         if ($LASTEXITCODE -ne 0) {
             throw "The regional map download failed (curl exit code $LASTEXITCODE). Rerun the script to resume."
         }
 
-        $downloadedHash = (Get-FileHash -LiteralPath $targetPbf -Algorithm MD5).Hash.ToLowerInvariant()
+        $downloadedHash = (Get-FileHash -LiteralPath $partialPbf -Algorithm MD5).Hash.ToLowerInvariant()
         if ($downloadedHash -ne $expectedMd5) {
-            Remove-Item -LiteralPath $targetPbf -Force
-            throw "The downloaded map failed its MD5 checksum. The incomplete file was removed; rerun the script."
+            Remove-Item -LiteralPath $partialPbf -Force
+            throw "The downloaded map failed its MD5 checksum. The invalid partial file was removed; rerun the script."
         }
+        Move-Item -LiteralPath $partialPbf -Destination $targetPbf -Force
         Write-Host "Regional OSM map downloaded and checksum verified." -ForegroundColor Green
     }
 }
