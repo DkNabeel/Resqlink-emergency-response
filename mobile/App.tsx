@@ -180,7 +180,7 @@ export default function App() {
   const facilityRequestSequence = useRef(0);
   const currentGpsAvailable = useRef(false);
   const mapRef = useRef<MapView | null>(null);
-  const conversationScrollRef = useRef<ScrollView | null>(null);
+  const conversationScrollRef = useRef<React.ElementRef<typeof ScrollView> | null>(null);
 
   const copy = COPY[language];
 
